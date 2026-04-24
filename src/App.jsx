@@ -655,8 +655,8 @@ const App = () => {
 
     const callApi = async (attempt = 0) => {
       try {
-        // [핵심 수정] Vercel 배포 시 404, 400 에러를 방지하기 위해 gemini-2.0-flash 모델과 v1beta 엔드포인트 사용
-        const aiModel = isCanvas ? 'gemini-2.5-flash-preview-09-2025' : 'gemini-2.0-flash';
+        // [완벽 해결] 구글 API 신규 정책에 맞춰 Vercel에서는 최신 정식 모델인 gemini-2.5-flash를 사용합니다.
+        const aiModel = isCanvas ? 'gemini-2.5-flash-preview-09-2025' : 'gemini-2.5-flash';
         const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${aiModel}:generateContent?key=${apiKey}`;
 
         const response = await fetch(apiUrl, {
@@ -2089,11 +2089,11 @@ const App = () => {
                     </div>
                   )}
 
-                  {isAnalyzing ? (
-                    // --- Console Simple Animation ---
-                    <div className="h-full min-h-[300px] flex flex-col items-center justify-center p-8 bg-slate-50 rounded-[2rem]">
-                        <Loader2 className="w-8 h-8 text-blue-500 animate-spin mb-4" />
-                        <h3 className="text-lg font-black text-slate-700 tracking-tight mb-2">AI 분석 진행 중</h3>
+                  {(currentProjectData?.activeScan?.testObjects?.length || 0) > 0 && (
+                    <div className="space-y-4">
+                      {(currentProjectData.activeScan.testObjects || []).map(obj => (
+                        <div key={obj.id} className={`p-6 bg-white border rounded-[2rem] shadow-sm hover:shadow-xl transition-all ${obj.status === 'PASS' ? 'border-emerald-100 bg-emerald-50/10' : obj.status === 'FAIL' ? 'border-rose-100 bg-rose-50/10' : 'border-slate-100'}`}>
+                          <div className="flex justify-between items-center cursor-pointer" onClick={() => setExpandedObjId(expandedObjId === obj.id ? null : obj.id)}>
                         <p className="text-xs text-slate-500 font-bold">화면의 UI 컴포넌트를 식별하고 있습니다...</p>
                     </div>
                   ) : testObjects.length === 0 ? (
