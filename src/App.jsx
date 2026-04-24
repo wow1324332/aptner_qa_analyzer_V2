@@ -201,7 +201,8 @@ const App = () => {
   const [newTestCase, setNewTestCase] = useState('');
   const [expandedObjId, setExpandedObjId] = useState(null);
 
-  const objectTypes = appComponents.length > 0 ? appComponents.map(c => c.type) : ['Button', 'Input', 'Select', 'Checkbox', 'Toggle', 'Tab', 'Text', 'Image', 'Icon', 'Container'];
+  // 컴포넌트 목록 안전성 강화
+  const objectTypes = (appComponents?.length > 0) ? appComponents.map(c => c.type) : ['Button', 'Input', 'Select', 'Checkbox', 'Toggle', 'Tab', 'Text', 'Image', 'Icon', 'Container'];
 
   // --- Project Long Press Action States ---
   const [longPressedProject, setLongPressedProject] = useState(null);
@@ -347,7 +348,7 @@ const App = () => {
           if (Date.now() - data.lastSeen < 300000) usersList.push(data);
         });
         setActiveUsers(list => JSON.stringify(list) === JSON.stringify(usersList) ? list : usersList);
-      });
+      }, (err) => console.error("Presence Error:", err));
 
       return () => {
         clearInterval(interval);
@@ -369,7 +370,7 @@ const App = () => {
       } else {
         setDoc(catRef, { list: ['미분류', '홈화면', '결제', '등록', '커뮤니티'] });
       }
-    });
+    }, (err) => console.error("Cat Error:", err));
 
     // Components & Test Cases
     const compRef = getPublicDoc('settings', 'components');
@@ -391,7 +392,7 @@ const App = () => {
         ];
         setDoc(compRef, { list: defaultList });
       }
-    });
+    }, (err) => console.error("Comp Error:", err));
 
     return () => { unsubCat(); unsubComp(); };
   }, [isAuthReady, user]);
@@ -405,14 +406,14 @@ const App = () => {
       const projList = [];
       snapshot.forEach(doc => projList.push({ id: doc.id, ...doc.data() }));
       setProjects(projList.sort((a, b) => (b.order || b.createdAt) - (a.order || a.createdAt)));
-    }, (err) => console.error(err));
+    }, (err) => console.error("Proj Error:", err));
 
     const historyRef = getPublicCollection('history');
     const unsubHistory = onSnapshot(historyRef, (snapshot) => {
       const histList = [];
       snapshot.forEach(doc => histList.push({ id: doc.id, ...doc.data() }));
       setHistory(histList.sort((a, b) => (b.order || b.createdAt) - (a.order || a.createdAt)));
-    }, (err) => console.error(err));
+    }, (err) => console.error("Hist Error:", err));
 
     return () => { unsubProjects(); unsubHistory(); };
   }, [isAuthReady, user, appState]);
@@ -427,7 +428,7 @@ const App = () => {
         setCurrentProjectData(null);
         setAppState('projects');
       }
-    });
+    }, (err) => console.error("Proj Doc Error:", err));
     return () => unsubProject();
   }, [isAuthReady, user, currentProjectId]);
 
@@ -635,7 +636,7 @@ const App = () => {
 
   const isProjectClosed = currentProjectData?.status === 'CLOSED';
 
-  // --- Editor Core Actions (AI 분석 로직) ---
+  // --- Editor Core Actions (AI 분석 로직 - 최신 모델 및 빌드 버그 방지) ---
   const analyzeScreenshot = async (base64Data, imageSrc) => {
     if (!base64Data || !currentProjectId || !user || isProjectClosed) return;
     const projectRef = getPublicDoc('projects', currentProjectId);
@@ -655,7 +656,7 @@ const App = () => {
 
     const callApi = async (attempt = 0) => {
       try {
-        // [완벽 해결] 구글 API 정책에 맞춰 Vercel 환경에서는 최신 모델인 gemini-2.5-flash를 사용합니다.
+        // [해결] 404 및 400 Bad Request 방지를 위해 정식 지원이 확인된 최신 모델과 v1beta 엔드포인트를 사용합니다.
         const aiModel = isCanvas ? 'gemini-2.5-flash-preview-09-2025' : 'gemini-2.5-flash';
         const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${aiModel}:generateContent?key=${apiKey}`;
 
@@ -671,14 +672,14 @@ const App = () => {
         
         const data = await response.json();
         
-        // [Vercel 빌드 에러 해결] 정규식(/)과 백틱(```)이 빌드 도구(esbuild)를 강제로 종료시키는 버그를
-        // 원천 차단하기 위해 아스키코드를 이용하여 백틱 문자열을 동적으로 생성 후 처리합니다.
+        // [해결] Vercel esbuild 빌드 에러(Unterminated regular expression)를 원천 차단하기 위해 
+        // 정규식이나 백틱을 사용하지 않고 String.fromCharCode(96) 아스키코드로 우회하여 텍스트를 자릅니다.
         const textResult = data.candidates?.[0]?.content?.parts?.[0]?.text || "{}";
         const bt = String.fromCharCode(96, 96, 96);
         const cleanText = textResult.split(bt + 'json').join('').split(bt).join('').trim();
         const parsed = JSON.parse(cleanText);
         
-        const componentMap = appComponents.reduce((acc, curr) => {
+        const componentMap = (appComponents || []).reduce((acc, curr) => {
            acc[curr.type] = curr.cases;
            return acc;
         }, {});
@@ -741,15 +742,18 @@ const App = () => {
 
   const toggleStatus = async (id, currentStatus) => {
     if (!currentProjectData?.activeScan?.testObjects || isProjectClosed) return;
+    // 흰 화면 방지: testObjects 배열 안전 참조
+    const testObjects = currentProjectData.activeScan.testObjects || [];
     const nextStatus = currentStatus === 'PENDING' ? 'PASS' : (currentStatus === 'PASS' ? 'FAIL' : 'PENDING');
-    const updatedObjects = currentProjectData.activeScan.testObjects.map(obj => obj.id === id ? { ...obj, status: nextStatus } : obj);
+    const updatedObjects = testObjects.map(obj => obj.id === id ? { ...obj, status: nextStatus } : obj);
     await updateActiveScanField('testObjects', updatedObjects);
   };
 
   const toggleTestCaseStatus = async (objId, tcId, newStatus) => {
     if (!currentProjectData?.activeScan?.testObjects || isProjectClosed) return;
+    const testObjects = currentProjectData.activeScan.testObjects || [];
     
-    const updatedObjects = currentProjectData.activeScan.testObjects.map(obj => {
+    const updatedObjects = testObjects.map(obj => {
       if (obj.id === objId) {
          const updatedCases = (obj.testCases || []).map(tc => tc.id === tcId ? { ...tc, status: newStatus } : tc);
          
@@ -769,7 +773,8 @@ const App = () => {
 
   const deleteObject = async (id) => {
     if (!currentProjectData?.activeScan?.testObjects || isProjectClosed) return;
-    const updatedObjects = currentProjectData.activeScan.testObjects.filter(obj => obj.id !== id);
+    const testObjects = currentProjectData.activeScan.testObjects || [];
+    const updatedObjects = testObjects.filter(obj => obj.id !== id);
     await updateActiveScanField('testObjects', updatedObjects);
   };
 
@@ -777,12 +782,13 @@ const App = () => {
     if (!currentProjectData?.activeScan?.testObjects || isProjectClosed) return;
     if (!editObjForm.label.trim()) return;
     
-    const componentMap = appComponents.reduce((acc, curr) => {
+    const componentMap = (appComponents || []).reduce((acc, curr) => {
        acc[curr.type] = curr.cases;
        return acc;
     }, {});
 
-    const updatedObjects = currentProjectData.activeScan.testObjects.map(obj => {
+    const testObjects = currentProjectData.activeScan.testObjects || [];
+    const updatedObjects = testObjects.map(obj => {
       if (obj.id === editingObjId) {
          let newTestCases = obj.testCases || [];
          let parentStatus = obj.status;
@@ -802,10 +808,10 @@ const App = () => {
   };
 
   const addNewObject = async () => {
-    if (!currentProjectData?.activeScan?.testObjects || isProjectClosed) return;
+    if (!currentProjectData?.activeScan || isProjectClosed) return;
     if (!addObjForm.label.trim()) return;
     
-    const componentMap = appComponents.reduce((acc, curr) => {
+    const componentMap = (appComponents || []).reduce((acc, curr) => {
        acc[curr.type] = curr.cases;
        return acc;
     }, {});
@@ -819,7 +825,8 @@ const App = () => {
       testCases: tcArray
     };
     
-    const updatedObjects = [...(currentProjectData.activeScan.testObjects || []), newObj];
+    const testObjects = currentProjectData.activeScan.testObjects || [];
+    const updatedObjects = [...testObjects, newObj];
     await updateActiveScanField('testObjects', updatedObjects);
     setIsAddingObj(false);
     setAddObjForm({ label: '', description: '', type: objectTypes[0] || 'Button' });
@@ -829,7 +836,8 @@ const App = () => {
     if (!currentProjectData?.activeScan?.testObjects || isProjectClosed) return;
     if (!newTestCaseLabel.trim()) return;
 
-    const updatedObjects = currentProjectData.activeScan.testObjects.map(obj => {
+    const testObjects = currentProjectData.activeScan.testObjects || [];
+    const updatedObjects = testObjects.map(obj => {
       if (obj.id === objId) {
         const newCase = {
           id: `tc_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
@@ -858,7 +866,8 @@ const App = () => {
     if (!currentProjectData?.activeScan?.testObjects || isProjectClosed) return;
     if (!editingTestCaseLabel.trim()) return;
 
-    const updatedObjects = currentProjectData.activeScan.testObjects.map(obj => {
+    const testObjects = currentProjectData.activeScan.testObjects || [];
+    const updatedObjects = testObjects.map(obj => {
       if (obj.id === objId) {
         const updatedCases = (obj.testCases || []).map(tc => tc.id === editingTestCaseId ? { ...tc, label: editingTestCaseLabel.trim() } : tc);
         return { ...obj, testCases: updatedCases };
@@ -873,7 +882,8 @@ const App = () => {
   const deleteTestCaseFromObject = async (objId, tcId) => {
     if (!currentProjectData?.activeScan?.testObjects || isProjectClosed) return;
 
-    const updatedObjects = currentProjectData.activeScan.testObjects.map(obj => {
+    const testObjects = currentProjectData.activeScan.testObjects || [];
+    const updatedObjects = testObjects.map(obj => {
       if (obj.id === objId) {
         const updatedCases = (obj.testCases || []).filter(tc => tc.id !== tcId);
 
@@ -893,7 +903,7 @@ const App = () => {
 
   const saveCurrentToHistory = async () => {
     const scan = currentProjectData?.activeScan;
-    if (!scan || !scan.image || (scan.testObjects || []).length === 0 || !user || !currentProjectId || isProjectClosed) return;
+    if (!scan || !scan.image || !user || !currentProjectId || isProjectClosed) return;
     
     setIsSavingReport(true);
     
@@ -1405,7 +1415,7 @@ const App = () => {
                   <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
                   <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
                 </div>
-                <span className="text-xs font-black tracking-widest uppercase text-white/90">{activeUsers.length} <span className="text-white/50">Online</span></span>
+                <span className="text-xs font-black tracking-widest uppercase text-white/90">{activeUsers?.length || 0} <span className="text-white/50">Online</span></span>
               </div>
             </div>
           </header>
@@ -1418,8 +1428,8 @@ const App = () => {
               <span className="mt-3 text-[10px] font-black uppercase tracking-widest text-white/50 group-hover:text-white transition-colors">Add Project</span>
             </div>
 
-            {projects.map(proj => {
-              const projectMembers = activeUsers.filter(u => u.currentProjectId === proj.id);
+            {(projects || []).map(proj => {
+              const projectMembers = (activeUsers || []).filter(u => u.currentProjectId === proj.id);
               return (
                 <div key={proj.id} 
                   draggable={true}
@@ -1607,11 +1617,11 @@ const App = () => {
                   <button onClick={addComponentType} className="px-4 py-2 bg-[#001529] text-white rounded-xl font-bold text-sm shadow hover:bg-black transition-colors"><Plus className="w-4 h-4" /></button>
                 </div>
                 <div className="space-y-2 overflow-y-auto flex-1 pr-1">
-                  {appComponents.map(comp => (
+                  {(appComponents || []).map(comp => (
                     <div key={comp.type} className="flex items-center justify-between px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl hover:border-blue-200 transition-colors cursor-pointer group" onClick={() => setEditingCompType(comp.type)}>
                       <div>
                          <span className="text-sm font-black text-slate-800">{comp.type}</span>
-                         <p className="text-[10px] text-slate-400 font-bold mt-0.5">{comp.cases.length}개의 기본 케이스</p>
+                         <p className="text-[10px] text-slate-400 font-bold mt-0.5">{(comp.cases || []).length}개의 기본 케이스</p>
                       </div>
                       <div className="flex items-center gap-2">
                          <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-blue-500" />
@@ -1634,8 +1644,8 @@ const App = () => {
                 </div>
                 <div className="space-y-2 overflow-y-auto flex-1 pr-1">
                    {(() => {
-                      const currentComp = appComponents.find(c => c.type === editingCompType);
-                      if (!currentComp || currentComp.cases.length === 0) return <p className="text-xs text-slate-400 font-bold italic text-center py-6">등록된 기본 케이스가 없습니다.</p>;
+                      const currentComp = (appComponents || []).find(c => c.type === editingCompType);
+                      if (!currentComp || (currentComp.cases || []).length === 0) return <p className="text-xs text-slate-400 font-bold italic text-center py-6">등록된 기본 케이스가 없습니다.</p>;
                       return currentComp.cases.map((tc, idx) => (
                          <div key={idx} className="flex items-center justify-between px-4 py-3 bg-white border border-slate-200 rounded-xl shadow-sm">
                            <span className="text-sm font-bold text-slate-700">{tc}</span>
@@ -1729,10 +1739,10 @@ const App = () => {
             <button onClick={() => setIsHistoryOpen(false)} className="p-2 hover:bg-white/5 rounded-lg"><X /></button>
           </div>
           <div className="flex-1 overflow-y-auto space-y-4 pr-2">
-             {displayGroups.length === 0 ? (
+             {(displayGroups || []).length === 0 ? (
                 <p className="text-xs text-white/40 text-center mt-10">저장된 아카이브가 없습니다.</p>
              ) : (
-                displayGroups.map(cat => {
+                (displayGroups || []).map(cat => {
                   const groupStats = (groupedHistory[cat] || []).reduce((acc, item) => {
                      acc.pass += (item.stats?.pass || 0);
                      acc.fail += (item.stats?.fail || 0);
@@ -1812,9 +1822,9 @@ const App = () => {
                             onDrop={(e) => handleHistoryDrop(e, item.id)}
                             onDragEnd={handleHistoryDragEnd}
                             onPointerDown={(e) => { if (e.button === 2) return; handleHistoryPressStart(item); }}
-                            onPointerUp={handleHistoryPressEnd}
-                            onPointerLeave={handleHistoryPressEnd}
-                            onPointerCancel={handleHistoryPressEnd}
+                            onPointerUp={(e) => handleHistoryPressEnd(e)}
+                            onPointerLeave={(e) => handleHistoryPressEnd(e)}
+                            onPointerCancel={(e) => handleHistoryPressEnd(e)}
                             onClick={() => handleHistoryClick(item)}
                             style={{ WebkitUserSelect: 'none', userSelect: 'none', WebkitTouchCallout: 'none' }}
                             className={`group p-4 bg-white rounded-2xl shadow-sm border border-transparent transition-all cursor-pointer flex flex-col items-center justify-center relative ${dragOverHistoryId === item.id ? 'border-[#0066FF] bg-blue-50 scale-105' : 'hover-soft-glow'} ${draggedHistoryId === item.id ? 'opacity-50' : ''}`}
@@ -1848,7 +1858,7 @@ const App = () => {
                     <h2 className="text-xl font-black uppercase tracking-tight">{selectedHistoryItem.title}</h2>
                     <div className="flex items-center gap-2 mt-2">
                        <div className="w-5 h-5 rounded-full overflow-hidden border border-slate-200">
-                          {selectedHistoryItem.savedByPhoto ? <img src={selectedHistoryItem.savedByPhoto} className="w-full h-full object-cover" /> : <div className="w-full h-full bg-slate-200 flex items-center justify-center text-[10px] font-bold">{selectedHistoryItem.savedByName?.[0]}</div>}
+                          {selectedHistoryItem.savedByPhoto ? <img src={selectedHistoryItem.savedByPhoto} className="w-full h-full object-cover" alt="" /> : <div className="w-full h-full bg-slate-200 flex items-center justify-center text-[10px] font-bold">{selectedHistoryItem.savedByName?.[0]}</div>}
                        </div>
                        <span className="text-[10px] font-bold text-slate-500">Saved by <span className="text-slate-800">{selectedHistoryItem.savedByName}</span></span>
                        <span className="text-[10px] font-bold text-slate-400 mx-1">•</span>
@@ -1876,7 +1886,7 @@ const App = () => {
               </div>
 
               <div className="flex-1 overflow-y-auto scrollbar-hide p-8 grid grid-cols-1 lg:grid-cols-2 gap-8 bg-slate-50">
-                 <div className="bg-white rounded-3xl p-4 flex items-center justify-center border border-slate-100 shadow-sm"><img src={selectedHistoryItem.image} className="max-w-full rounded-xl shadow-md" /></div>
+                 <div className="bg-white rounded-3xl p-4 flex items-center justify-center border border-slate-100 shadow-sm"><img src={selectedHistoryItem.image} className="max-w-full rounded-xl shadow-md" alt="history" /></div>
                  <div className="space-y-4">
                     {(selectedHistoryItem.testObjects || []).map(obj => (
                        <div key={obj.id} className="p-4 border rounded-2xl flex flex-col bg-white shadow-sm hover:shadow-md transition-shadow">
@@ -1889,7 +1899,7 @@ const App = () => {
                                 {obj.status}
                              </button>
                           </div>
-                          {obj.testCases && obj.testCases.length > 0 && (
+                          {(obj.testCases || []).length > 0 && (
                              <div className="mt-3 pt-3 border-t border-slate-100 space-y-1">
                                 {(obj.testCases || []).map(tc => (
                                    <div key={tc.id} className="flex justify-between items-center">
@@ -1967,7 +1977,7 @@ const App = () => {
               </div>
 
               <button onClick={() => setIsHistoryOpen(true)} className="px-5 py-3 bg-[#001529] text-white rounded-xl shadow-lg font-black text-xs uppercase tracking-widest hover:bg-slate-800 active:scale-95 transition-all">Archive</button>
-              {!isProjectClosed && activeScan?.image && <button onClick={saveCurrentToHistory} disabled={!activeScan.title?.trim()} className="px-6 py-3 bg-emerald-500 text-white rounded-xl shadow-lg font-black text-xs uppercase tracking-widest hover:bg-emerald-600 active:scale-95 transition-all disabled:opacity-30">Save Report</button>}
+              {!isProjectClosed && activeScan?.image && <button onClick={saveCurrentToHistory} disabled={!(scanMetaForm.title || '').trim()} className="px-6 py-3 bg-emerald-500 text-white rounded-xl shadow-lg font-black text-xs uppercase tracking-widest hover:bg-emerald-600 active:scale-95 transition-all disabled:opacity-30">Save Report</button>}
             </div>
           </header>
 
@@ -1985,7 +1995,7 @@ const App = () => {
                     </div>
                   ) : (
                     <div className="relative group w-full h-full flex items-center justify-center">
-                      <img src={activeScan.image} className="max-w-full max-h-[600px] rounded-2xl shadow-2xl transition-all" />
+                      <img src={activeScan.image} className="max-w-full max-h-[600px] rounded-2xl shadow-2xl transition-all" alt="Viewfinder" />
                       
                       {/* --- Viewfinder Simple Scan Effect --- */}
                       {isAnalyzing && (
@@ -2062,7 +2072,7 @@ const App = () => {
                                 
                                 {isCategoryDropdownOpen && (
                                   <div className="absolute top-full left-0 w-full mt-2 bg-white border border-slate-100 rounded-2xl shadow-2xl py-2 z-[60] animate-in fade-in slide-in-from-top-2 duration-200 max-h-60 overflow-y-auto">
-                                    {appCategories.map(cat => (
+                                    {(appCategories || []).map(cat => (
                                       <button 
                                         key={cat} 
                                         onClick={() => {
@@ -2092,7 +2102,7 @@ const App = () => {
                         <h3 className="text-lg font-black text-slate-700 tracking-tight mb-2">AI 분석 진행 중</h3>
                         <p className="text-xs text-slate-500 font-bold">화면의 UI 컴포넌트를 식별하고 있습니다...</p>
                     </div>
-                  ) : testObjects.length === 0 ? (
+                  ) : (testObjects || []).length === 0 ? (
                     <div className="h-full min-h-[300px] flex flex-col items-center justify-center py-24 text-slate-200"><Layout className="w-20 h-20 mb-4 opacity-20" /><p className="font-black uppercase tracking-widest text-[10px]">No Data Captured</p></div>
                   ) : (
                     <div className="space-y-4 pb-12">
@@ -2100,11 +2110,11 @@ const App = () => {
                       <div className="mb-6 space-y-2">
                         <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-widest text-slate-500">
                           <span>Overall Progress</span>
-                          <span>{Math.round((testObjects.filter(o => o.status === 'PASS').length / testObjects.length) * 100) || 0}% PASS</span>
+                          <span>{Math.round((testObjects.filter(o => o.status === 'PASS').length / Math.max(testObjects.length, 1)) * 100) || 0}% PASS</span>
                         </div>
                         <div className="w-full h-2.5 bg-slate-100 rounded-full overflow-hidden flex">
                           {(() => {
-                            const total = testObjects.length;
+                            const total = Math.max(testObjects.length, 1);
                             const pass = testObjects.filter(o => o.status === 'PASS').length;
                             const fail = testObjects.filter(o => o.status === 'FAIL').length;
                             const pending = testObjects.filter(o => o.status === 'PENDING').length;
@@ -2131,7 +2141,7 @@ const App = () => {
                              <div key={obj.id} className="p-5 rounded-[1.5rem] bg-blue-50 border border-blue-200 shadow-sm space-y-3">
                                 <div className="flex gap-3">
                                    <select className="w-32 px-3 py-2 rounded-lg border border-blue-200 bg-white text-xs font-black outline-none" value={editObjForm.type} onChange={(e)=>setEditObjForm({...editObjForm, type: e.target.value})}>
-                                      {objectTypes.map(t => <option key={t} value={t}>{t}</option>)}
+                                      {(objectTypes || []).map(t => <option key={t} value={t}>{t}</option>)}
                                    </select>
                                    <input type="text" placeholder="항목 이름" className="flex-1 px-4 py-2 rounded-lg border border-blue-200 bg-white text-sm font-black outline-none" value={editObjForm.label} onChange={(e)=>setEditObjForm({...editObjForm, label: e.target.value})} />
                                 </div>
@@ -2249,7 +2259,7 @@ const App = () => {
                                      
                                      {isAddTypeDropdownOpen && (
                                        <div className="absolute bottom-full left-0 w-48 mb-2 bg-white border border-slate-100 rounded-xl shadow-2xl py-2 z-[70] animate-in fade-in slide-in-from-bottom-2 duration-200 max-h-60 overflow-y-auto">
-                                         {objectTypes.map(t => (
+                                         {(objectTypes || []).map(t => (
                                            <button 
                                              key={t} 
                                              onClick={() => {
