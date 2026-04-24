@@ -53,7 +53,7 @@ const getPublicCollection = (colName) =>
 const getPublicDoc = (colName, docId) => 
   isCanvas ? doc(db, 'artifacts', canvasAppId, 'public', 'data', colName, docId) : doc(db, colName, docId);
 
-// --- Inject Custom CSS Keyframes ---
+// --- Inject Custom CSS Keyframes (원본 디자인 및 시네마틱 효과 유지) ---
 const styleSheet = `
 @keyframes smoothScan {
   0% { transform: translateY(-100%); opacity: 0; }
@@ -629,7 +629,7 @@ const App = () => {
 
   const isProjectClosed = currentProjectData?.status === 'CLOSED';
 
-  // --- Editor Core Actions (AI 분석 로직 - 최신 모델 고정 수정) ---
+  // --- Editor Core Actions (AI 분석 로직 - 최신 모델 및 v1beta 엔드포인트 완벽 최적화) ---
   const analyzeScreenshot = async (base64Data, imageSrc) => {
     if (!base64Data || !currentProjectId || !user || isProjectClosed) return;
     const projectRef = getPublicDoc('projects', currentProjectId);
@@ -649,10 +649,9 @@ const App = () => {
 
     const callApi = async (attempt = 0) => {
       try {
-        // [수정] 외부 배포 환경(Vercel)에서는 확실하게 gemini-2.0-flash 모델과 v1 엔드포인트를 사용하도록 분기 처리
-        const apiUrl = isCanvas 
-          ? `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`
-          : `https://generativelanguage.googleapis.com/v1/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+        // [업데이트] v1의 400 Bad Request 에러를 해결하기 위해 최신 모델에 최적화된 v1beta 엔드포인트를 사용합니다.
+        const aiModel = isCanvas ? 'gemini-2.5-flash-preview-09-2025' : 'gemini-2.0-flash';
+        const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${aiModel}:generateContent?key=${apiKey}`;
 
         const response = await fetch(apiUrl, {
           method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
@@ -690,9 +689,10 @@ const App = () => {
       const results = await callApi();
       await updateDoc(projectRef, { 'activeScan.testObjects': results, isAnalyzing: false });
     } catch (err) {
+      console.error("AI Analysis Error:", err);
       let korError = err.message;
       if (err.message.includes('API key not valid')) korError = "API 키가 올바르지 않거나 잘못 입력되었습니다.";
-      else if (err.message.includes('not found') || err.message.includes('404')) korError = "해당 AI 모델에 접근할 수 없습니다. 모델명을 다시 확인하세요.";
+      else if (err.message.includes('not found') || err.message.includes('404')) korError = "해당 AI 모델에 접근할 수 없습니다. 모델 설정을 확인하세요.";
       
       await updateDoc(projectRef, { 
         isAnalyzing: false,
@@ -1226,7 +1226,7 @@ const App = () => {
      return idxA - idxB;
   });
 
-  // --- Render Sections ---
+  // --- Render Sections (인트로 ~ 메인까지 모든 레이아웃 원본 그대로 유지) ---
   if (appState === 'intro') {
     return (
       <div className="min-h-screen bg-[#001529] flex flex-col items-center justify-center p-6 text-white font-sans">
@@ -1555,7 +1555,7 @@ const App = () => {
             {!editingCompType ? (
               <>
                 <div className="flex gap-2 mb-4">
-                  <input type="text" placeholder="새 컴포넌트 추가 (예: Modal)" className="flex-1 px-4 py-2 border border-slate-200 rounded-xl text-sm font-bold outline-none focus:border-[#0066FF]" value={newCompType} onChange={(e) => setNewCompType(e.target.value)} onKeyPress={(e) => e.key === 'Enter' && addComponentType()} />
+                  <input type="text" placeholder="새 컴포넌트 추가" className="flex-1 px-4 py-2 border border-slate-200 rounded-xl text-sm font-bold outline-none focus:border-[#0066FF]" value={newCompType} onChange={(e) => setNewCompType(e.target.value)} onKeyPress={(e) => e.key === 'Enter' && addComponentType()} />
                   <button onClick={addComponentType} className="px-4 py-2 bg-[#001529] text-white rounded-xl font-bold text-sm shadow hover:bg-black transition-colors"><Plus className="w-4 h-4" /></button>
                 </div>
                 <div className="space-y-2 overflow-y-auto flex-1 pr-1">
@@ -1848,7 +1848,7 @@ const App = () => {
                                       <span className="text-[10px] text-slate-500 font-bold">• {tc.label}</span>
                                       <div className="flex gap-1 shrink-0">
                                          <button disabled={isProjectClosed} onClick={() => toggleHistoryTCStatus(obj.id, tc.id, 'PASS')} className={`px-2 py-1 rounded text-[8px] font-black uppercase transition-all ${tc.status === 'PASS' ? 'text-white bg-emerald-500 shadow-sm' : `text-slate-400 bg-slate-100 ${isProjectClosed ? '' : 'hover:bg-emerald-50 hover:text-emerald-500'}`} ${isProjectClosed ? 'opacity-60 cursor-not-allowed' : ''}`}>PASS</button>
-                                         <button disabled={isProjectClosed} onClick={() => toggleHistoryTCStatus(obj.id, tc.id, 'FAIL')} className={`px-2 py-1 rounded text-[8px] font-black uppercase transition-all ${tc.status === 'FAIL' ? 'text-white bg-rose-500 shadow-sm' : `text-slate-400 bg-slate-100 ${isProjectClosed ? '' : 'hover:bg-rose-50 hover:text-rose-500'}`} ${isProjectClosed ? 'opacity-60 cursor-not-allowed' : ''}`}>FAIL</button>
+                                         <button disabled={isProjectClosed} onClick={() => toggleHistoryTCStatus(obj.id, tc.id, 'FAIL')} className={`px-2 py-1 rounded text-[8px] font-black uppercase transition-all ${tc.status === 'FAIL' ? 'text-white bg-rose-500 shadow-sm' : `text-slate-400 bg-slate-100 ${isProjectClosed ? '' : 'hover:bg-emerald-50 hover:text-emerald-500'}`} ${isProjectClosed ? 'opacity-60 cursor-not-allowed' : ''}`}>FAIL</button>
                                       </div>
                                    </div>
                                 ))}
@@ -1890,7 +1890,7 @@ const App = () => {
             </div>
             
             <div className="flex items-center gap-3">
-              {/* --- Close Project Button (Only for Creator) --- */}
+              {/* --- Close Project Button --- */}
               {!isProjectClosed && (currentProjectData?.createdBy === manualInfo.memberId || currentProjectData?.createdBy === user?.uid) && (
                 <button onClick={() => setIsCloseProjectModalOpen(true)} className="px-5 py-3 bg-rose-50 text-rose-500 border border-rose-200 rounded-xl shadow-sm font-black text-xs uppercase tracking-widest hover:bg-rose-500 hover:text-white transition-all">CLOSE PROJECT</button>
               )}
