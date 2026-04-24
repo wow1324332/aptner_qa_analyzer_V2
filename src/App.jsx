@@ -671,9 +671,9 @@ const App = () => {
         
         const data = await response.json();
         
-        // [추가 안정화] 마크다운 백틱(```json)이 포함된 경우를 안전하게 제거 후 파싱
+        // [Vercel 빌드 에러 해결] 정규식의 백틱(```)이 빌드 도구(esbuild)를 망가뜨리는 치명적인 버그를 Split 방식 적용으로 우회 해결
         const textContent = data.candidates?.[0]?.content?.parts?.[0]?.text || "{}";
-        const cleanText = textContent.replace(/```json/g, '').replace(/```/g, '').trim();
+        const cleanText = textContent.split('```json').join('').split('```').join('').trim();
         const parsed = JSON.parse(cleanText);
         
         const componentMap = appComponents.reduce((acc, curr) => {
