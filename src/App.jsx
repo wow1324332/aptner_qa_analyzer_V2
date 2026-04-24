@@ -629,7 +629,7 @@ const App = () => {
 
   const isProjectClosed = currentProjectData?.status === 'CLOSED';
 
-  // --- Editor Core Actions (AI 분석 로직) ---
+  // --- Editor Core Actions (AI 분석 로직) 수정본 ---
   const analyzeScreenshot = async (base64Data, imageSrc) => {
     if (!base64Data || !currentProjectId || !user || isProjectClosed) return;
     const projectRef = getPublicDoc('projects', currentProjectId);
@@ -649,8 +649,13 @@ const App = () => {
 
     const callApi = async (attempt = 0) => {
       try {
-        const aiModel = isCanvas ? 'gemini-2.5-flash-preview-09-2025' : 'gemini-1.5-flash';
-        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${aiModel}:generateContent?key=${apiKey}`, {
+        // [수정된 부분] 캔버스와 외부(Vercel) 환경의 API 호출 URL을 완벽하게 분리합니다.
+        // Vercel에서는 안정적인 v1 버전과 정식 gemini-1.5-flash 모델을 사용합니다.
+        const apiUrl = isCanvas 
+          ? `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`
+          : `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+
+        const response = await fetch(apiUrl, {
           method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
         });
         
@@ -2146,7 +2151,7 @@ const App = () => {
                                              <span className="text-xs font-bold text-slate-700 truncate">{tc.label}</span>
                                              {!isProjectClosed && (
                                                 <div className="hidden group-hover/tc:flex items-center gap-1 shrink-0">
-                                                    <button onClick={() => { setEditingTestCaseId(tc.id); setEditingTestCaseLabel(tc.label); }} className="p-1 text-slate-300 hover:text-blue-500 transition-colors"><Edit2 className="w-3 h-3" /></button>
+                                                   <button onClick={() => { setEditingTestCaseId(tc.id); setEditingTestCaseLabel(tc.label); }} className="p-1 text-slate-300 hover:text-blue-500 transition-colors"><Edit2 className="w-3 h-3" /></button>
                                                    <button onClick={() => deleteTestCaseFromObject(obj.id, tc.id)} className="p-1 text-slate-300 hover:text-rose-500 transition-colors"><Trash2 className="w-3 h-3" /></button>
                                                 </div>
                                              )}
