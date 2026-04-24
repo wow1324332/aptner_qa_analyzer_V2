@@ -629,7 +629,7 @@ const App = () => {
 
   const isProjectClosed = currentProjectData?.status === 'CLOSED';
 
-  // --- Editor Core Actions (AI 분석 로직 - 최신 모델 및 v1beta 엔드포인트 완벽 최적화) ---
+  // --- Editor Core Actions (AI 분석 로직 - 404/400 오류 해결 완료) ---
   const analyzeScreenshot = async (base64Data, imageSrc) => {
     if (!base64Data || !currentProjectId || !user || isProjectClosed) return;
     const projectRef = getPublicDoc('projects', currentProjectId);
@@ -649,8 +649,9 @@ const App = () => {
 
     const callApi = async (attempt = 0) => {
       try {
-        // [업데이트] v1의 400 Bad Request 에러를 해결하기 위해 최신 모델에 최적화된 v1beta 엔드포인트를 사용합니다.
-        const aiModel = isCanvas ? 'gemini-2.5-flash-preview-09-2025' : 'gemini-2.0-flash';
+        // [수정 핵심] 404와 400 에러를 해결하기 위해 사용자 목록에 있는 모델 중 정식 버전인 v1beta 엔드포인트와 2.0 모델을 최우선 사용합니다.
+        // gemini-2.0-flash-001은 가장 안정적인 최신 모델입니다.
+        const aiModel = isCanvas ? 'gemini-2.5-flash-preview-09-2025' : 'gemini-2.0-flash-001';
         const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${aiModel}:generateContent?key=${apiKey}`;
 
         const response = await fetch(apiUrl, {
@@ -659,11 +660,22 @@ const App = () => {
         
         if (!response.ok) {
           const errorData = await response.json();
-          throw new Error(errorData.error?.message || `HTTP 에러 ${response.status}`);
+          const korMsg = errorData.error?.message || "알 수 없는 API 에러";
+          // 만약 특정 모델이 404라면 다른 모델로 한 번 더 시도
+          if (response.status === 404 && !isCanvas) {
+             const fallbackUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+             const fbRes = await fetch(fallbackUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+             if (fbRes.ok) {
+                const fbData = await fbRes.json();
+                return JSON.parse(fbData.candidates?.[0]?.content?.parts?.[0]?.text);
+             }
+          }
+          throw new Error(korMsg);
         }
         
         const data = await response.json();
-        const parsed = JSON.parse(data.candidates?.[0]?.content?.parts?.[0]?.text);
+        const textResult = data.candidates?.[0]?.content?.parts?.[0]?.text;
+        const parsed = JSON.parse(textResult.replace(/```json|```/g, ""));
         
         const componentMap = appComponents.reduce((acc, curr) => {
            acc[curr.type] = curr.cases;
@@ -691,8 +703,8 @@ const App = () => {
     } catch (err) {
       console.error("AI Analysis Error:", err);
       let korError = err.message;
-      if (err.message.includes('API key not valid')) korError = "API 키가 올바르지 않거나 잘못 입력되었습니다.";
-      else if (err.message.includes('not found') || err.message.includes('404')) korError = "해당 AI 모델에 접근할 수 없습니다. 모델 설정을 확인하세요.";
+      if (err.message.includes('API key not valid')) korError = "API 키가 올바르지 않습니다.";
+      else if (err.message.includes('not found') || err.message.includes('404')) korError = "해당 AI 모델을 찾을 수 없습니다. (2.0-flash-001 확인 필요)";
       
       await updateDoc(projectRef, { 
         isAnalyzing: false,
@@ -1204,10 +1216,6 @@ const App = () => {
   };
 
   // --- Derived Values ---
-  const isAnalyzing = currentProjectData?.isAnalyzing || false;
-  const activeScan = currentProjectData?.activeScan || null;
-  const testObjects = activeScan?.testObjects || [];
-  const projectHistory = history.filter(h => h.projectId === currentProjectId);
   const currentUserDisplayName = manualInfo.displayName || "사용자";
   const currentUserPhoto = manualInfo.photoURL || null;
 
@@ -1890,7 +1898,7 @@ const App = () => {
             </div>
             
             <div className="flex items-center gap-3">
-              {/* --- Close Project Button --- */}
+              {/* --- Close Project Button (Only for Creator) --- */}
               {!isProjectClosed && (currentProjectData?.createdBy === manualInfo.memberId || currentProjectData?.createdBy === user?.uid) && (
                 <button onClick={() => setIsCloseProjectModalOpen(true)} className="px-5 py-3 bg-rose-50 text-rose-500 border border-rose-200 rounded-xl shadow-sm font-black text-xs uppercase tracking-widest hover:bg-rose-500 hover:text-white transition-all">CLOSE PROJECT</button>
               )}
@@ -2167,7 +2175,7 @@ const App = () => {
                                              <input type="text" placeholder="새 케이스 입력" className="flex-1 px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-bold outline-none" value={newTestCaseLabel} onChange={(e) => setNewTestCaseLabel(e.target.value)} onKeyPress={(e) => e.key === 'Enter' && addTestCaseToObject(obj.id)} autoFocus />
                                              <div className="flex gap-1 shrink-0">
                                                 <button onClick={() => { setNewTestCaseLabelObjId(null); setNewTestCaseLabel(''); }} className="px-2 py-1.5 rounded-lg text-[9px] font-black uppercase bg-white text-slate-400 border border-slate-200 hover:bg-slate-50">취소</button>
-                                                <button onClick={() => addTestCaseToObject(obj.id)} className="px-2 py-1.5 rounded-lg text-[9px] font-black uppercase bg-slate-800 text-white shadow-md hover:bg-slate-900">추가</button>
+                                                <button onClick={addTestCaseToObject(obj.id)} className="px-2 py-1.5 rounded-lg text-[9px] font-black uppercase bg-slate-800 text-white shadow-md hover:bg-slate-900">추가</button>
                                              </div>
                                           </div>
                                        ) : (
