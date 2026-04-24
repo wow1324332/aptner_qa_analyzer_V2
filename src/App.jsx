@@ -10,7 +10,7 @@ import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged, signOut, signInWithCustomToken } from 'firebase/auth';
 import { initializeFirestore, collection, doc, setDoc, onSnapshot, addDoc, updateDoc, deleteDoc, getDoc } from 'firebase/firestore';
 
-// --- 캔버스와 외부 배포(Vercel) 환경을 모두 지원하는 하이브리드 설정 ---
+// --- 환경 변수 로직 ---
 const getEnv = (key) => {
   try {
     if (key === 'GEMINI') return import.meta.env.VITE_GEMINI_API_KEY;
@@ -26,13 +26,10 @@ const getEnv = (key) => {
 };
 
 const isCanvas = typeof __firebase_config !== 'undefined';
-
-// Firebase Document Reference 제약(슬래시 금지)을 해결하기 위한 안전한 ID 파싱
 const canvasAppId = typeof __app_id !== 'undefined' ? String(__app_id).replace(/\//g, '-') : 'default-app-id';
-
 const apiKey = isCanvas ? "" : (getEnv('GEMINI') || "");
 
-// 흰 화면 방지: Firebase 설정 파싱 중 에러가 나도 앱이 죽지 않도록 방어 코드 추가
+// 흰 화면 방지: Firebase 설정 파싱 중 에러 발생 시 앱 크래시 방지
 let firebaseConfig;
 try {
   firebaseConfig = isCanvas ? JSON.parse(__firebase_config) : {
@@ -53,13 +50,12 @@ const db = initializeFirestore(app, {
   experimentalForceLongPolling: true
 });
 
-// 캔버스는 복잡한 경로를, 외부 배포는 깔끔한 Root 경로를 자동으로 사용합니다.
 const getPublicCollection = (colName) => 
   isCanvas ? collection(db, 'artifacts', canvasAppId, 'public', 'data', colName) : collection(db, colName);
 const getPublicDoc = (colName, docId) => 
   isCanvas ? doc(db, 'artifacts', canvasAppId, 'public', 'data', colName, docId) : doc(db, colName, docId);
 
-// --- Inject Custom CSS Keyframes (원본 시네마틱 효과 유지) ---
+// --- CSS 시네마틱 효과 ---
 const styleSheet = `
 @keyframes smoothScan {
   0% { transform: translateY(-100%); opacity: 0; }
@@ -95,9 +91,7 @@ const styleSheet = `
   mask-image: linear-gradient(to left, rgba(0,0,0,1) 30%, rgba(0,0,0,0) 70%);
   mask-size: 300% 100%;
   mask-position: 100% 0;
-  animation:
-    screenDissolveToLeft 1.2s cubic-bezier(0.3, 0, 0.2, 1) forwards,
-    maskWipeLeft 1.2s cubic-bezier(0.3, 0, 0.2, 1) forwards;
+  animation: screenDissolveToLeft 1.2s cubic-bezier(0.3, 0, 0.2, 1) forwards, maskWipeLeft 1.2s cubic-bezier(0.3, 0, 0.2, 1) forwards;
 }
 @keyframes cinematicRevealLeft {
   0% { transform: translateX(15vw) scale(1.05); opacity: 0; filter: blur(20px) saturate(0); }
@@ -107,14 +101,8 @@ const styleSheet = `
   animation: cinematicRevealLeft 1.4s cubic-bezier(0.16, 1, 0.2, 1) forwards;
 }
 @keyframes cinematicHeartbeat {
-  0%, 100% {
-    box-shadow: 0 0 0 1px rgba(0, 102, 255, 0.4), 0 0 20px rgba(0, 102, 255, 0.3), inset 0 0 15px rgba(0, 102, 255, 0.1);
-    border-color: rgba(0, 102, 255, 0.6);
-  }
-  50% {
-    box-shadow: 0 0 0 3px rgba(50, 150, 255, 1), 0 0 45px rgba(0, 102, 255, 0.9), inset 0 0 35px rgba(0, 102, 255, 0.5);
-    border-color: rgba(100, 200, 255, 1);
-  }
+  0%, 100% { box-shadow: 0 0 0 1px rgba(0, 102, 255, 0.4), 0 0 20px rgba(0, 102, 255, 0.3), inset 0 0 15px rgba(0, 102, 255, 0.1); border-color: rgba(0, 102, 255, 0.6); }
+  50% { box-shadow: 0 0 0 3px rgba(50, 150, 255, 1), 0 0 45px rgba(0, 102, 255, 0.9), inset 0 0 35px rgba(0, 102, 255, 0.5); border-color: rgba(100, 200, 255, 1); }
 }
 .hover-cinematic-card:hover {
   animation: cinematicHeartbeat 1.4s ease-in-out infinite;
@@ -129,28 +117,14 @@ const styleSheet = `
   0% { transform: translateY(-100%); }
   100% { transform: translateY(100%); }
 }
-
-/* 글로벌 스크롤바 완벽 숨김 처리 */
-::-webkit-scrollbar {
-  display: none !important;
-  width: 0 !important;
-  height: 0 !important;
-}
-* {
-  -ms-overflow-style: none !important;
-  scrollbar-width: none !important;
-}
-.scrollbar-hide::-webkit-scrollbar {
-  display: none !important;
-}
-.scrollbar-hide {
-  -ms-overflow-style: none !important;
-  scrollbar-width: none !important;
-}
+::-webkit-scrollbar { display: none !important; width: 0 !important; height: 0 !important; }
+* { -ms-overflow-style: none !important; scrollbar-width: none !important; }
+.scrollbar-hide::-webkit-scrollbar { display: none !important; }
+.scrollbar-hide { -ms-overflow-style: none !important; scrollbar-width: none !important; }
 `;
 
 const App = () => {
-  // --- Auth & Navigation States ---
+  // --- States ---
   const [appState, setAppState] = useState('intro');
   const [prevAppState, setPrevAppState] = useState(null);
   const [loginErrorMsg, setLoginErrorMsg] = useState('');
@@ -160,22 +134,17 @@ const App = () => {
   const [isAuthReady, setIsAuthReady] = useState(false);
   const [activeUsers, setActiveUsers] = useState([]);
 
-  // --- Custom ID/PW Auth States ---
   const [authMode, setAuthMode] = useState('login');
   const [memberId, setMemberId] = useState('');
   const [memberPw, setMemberPw] = useState('');
   const [memberName, setMemberName] = useState('');
-
-  // --- Profile Input State ---
   const [manualInfo, setManualInfo] = useState({ displayName: '', photoURL: '', memberId: null });
 
-  // --- Collaborative Data States ---
   const [projects, setProjects] = useState([]);
   const [currentProjectId, setCurrentProjectId] = useState(null);
   const [currentProjectData, setCurrentProjectData] = useState(null);
   const [history, setHistory] = useState([]);
   
-  // --- Local UI States ---
   const fileInputRef = useRef(null);
   const categoryDropdownRef = useRef(null);
   const addTypeDropdownRef = useRef(null);
@@ -188,12 +157,10 @@ const App = () => {
   const [isCategoryDropdownOpen, setIsCategoryDropdownOpen] = useState(false);
   const [isAddTypeDropdownOpen, setIsAddTypeDropdownOpen] = useState(false);
   
-  // --- Category Management States ---
   const [appCategories, setAppCategories] = useState(['미분류', '홈화면', '결제', '등록', '커뮤니티']);
   const [isCatModalOpen, setIsCatModalOpen] = useState(false);
   const [newCatName, setNewCatName] = useState('');
 
-  // --- Component & TestCase Management States ---
   const [appComponents, setAppComponents] = useState([]);
   const [isCompModalOpen, setIsCompModalOpen] = useState(false);
   const [editingCompType, setEditingCompType] = useState(null);
@@ -201,10 +168,9 @@ const App = () => {
   const [newTestCase, setNewTestCase] = useState('');
   const [expandedObjId, setExpandedObjId] = useState(null);
 
-  // 컴포넌트 목록 안전성 강화
-  const objectTypes = (appComponents?.length > 0) ? appComponents.map(c => c.type) : ['Button', 'Input', 'Select', 'Checkbox', 'Toggle', 'Tab', 'Text', 'Image', 'Icon', 'Container'];
+  // 흰 화면 방지: appComponents가 없을 때를 대비한 안전망
+  const objectTypes = (appComponents || []).length > 0 ? appComponents.map(c => c.type) : ['Button', 'Input', 'Select', 'Checkbox', 'Toggle', 'Tab', 'Text', 'Image', 'Icon', 'Container'];
 
-  // --- Project Long Press Action States ---
   const [longPressedProject, setLongPressedProject] = useState(null);
   const [isEditProjectName, setIsEditProjectName] = useState(false);
   const [editProjectNameVal, setEditProjectNameVal] = useState('');
@@ -214,61 +180,50 @@ const App = () => {
   const longPressTimerRef = useRef(null);
   const isLongPressTriggeredRef = useRef(false);
 
-  // --- Meta Info Input States ---
   const [scanMetaForm, setScanMetaForm] = useState({ title: '', category: '미분류' });
   const [isMetaFocused, setIsMetaFocused] = useState(false);
 
-  // --- Object Editing States ---
   const [editingObjId, setEditingObjId] = useState(null);
   const [editObjForm, setEditObjForm] = useState({ label: '', description: '', type: 'Button' });
   const [isAddingObj, setIsAddingObj] = useState(false);
   const [addObjForm, setAddObjForm] = useState({ label: '', description: '', type: 'Button' });
 
-  // --- Object Test Case Editing States ---
   const [editingTestCaseId, setEditingTestCaseId] = useState(null);
   const [editingTestCaseLabel, setEditingTestCaseLabel] = useState('');
   const [newTestCaseLabelObjId, setNewTestCaseLabelObjId] = useState(null);
   const [newTestCaseLabel, setNewTestCaseLabel] = useState('');
 
-  // --- History Interaction States ---
   const [showActionsHistoryId, setShowActionsHistoryId] = useState(null);
   const [draggedHistoryId, setDraggedHistoryId] = useState(null);
   const [dragOverHistoryId, setDragOverHistoryId] = useState(null);
   const historyLongPressTimerRef = useRef(null);
   const isHistoryLongPressTriggeredRef = useRef(false);
 
-  // --- Group Interaction States ---
   const [showActionsGroupCat, setShowActionsGroupCat] = useState(null);
   const [draggedGroupCat, setDraggedGroupCat] = useState(null);
   const [dragOverGroupCat, setDragOverGroupCat] = useState(null);
   const groupLongPressTimerRef = useRef(null);
   const isGroupLongPressTriggeredRef = useRef(false);
 
-  // --- Group Modal States ---
   const [isEditGroupModalOpen, setIsEditGroupModalOpen] = useState(false);
   const [editGroupOldName, setEditGroupOldName] = useState('');
   const [editGroupNewName, setEditGroupNewName] = useState('');
   const [isDeleteGroupModalOpen, setIsDeleteGroupModalOpen] = useState(false);
   const [deleteGroupTarget, setDeleteGroupTarget] = useState(null);
-
-  // --- Modal States ---
   const [isCloseProjectModalOpen, setIsCloseProjectModalOpen] = useState(false);
 
-  // --- Cinematic Transition States ---
   const [isLandingExiting, setIsLandingExiting] = useState(false);
   const [isAuthorizedEntering, setIsAuthorizedEntering] = useState(false);
   const [isSavingReport, setIsSavingReport] = useState(false);
-
-  // --- Scroll to Top States ---
   const [showScrollTop, setShowScrollTop] = useState(false);
+  
   const mainScrollRef = useRef(null);
   const consoleScrollRef = useRef(null);
 
   const handleScroll = () => {
     const mainTop = mainScrollRef.current?.scrollTop || 0;
-    const consoleTop = consoleScrollRef.current?.scrollTop || 0;
     const winTop = window.scrollY || document.documentElement.scrollTop || 0;
-    setShowScrollTop(mainTop > 10 || consoleTop > 10 || winTop > 10);
+    setShowScrollTop(mainTop > 10 || winTop > 10);
   };
 
   useEffect(() => {
@@ -278,11 +233,10 @@ const App = () => {
 
   const scrollToTop = () => {
     if (mainScrollRef.current) mainScrollRef.current.scrollTo({ top: 0, behavior: 'smooth' });
-    if (consoleScrollRef.current) consoleScrollRef.current.scrollTo({ top: 0, behavior: 'smooth' });
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  // --- Auth Listener ---
+  // --- Auth Initialization ---
   useEffect(() => {
     const initAuth = async () => {
       try {
@@ -291,168 +245,106 @@ const App = () => {
         } else {
           await signInAnonymously(auth);
         }
-      } catch (err) {
-        console.warn("Initial sign-in failed:", err);
-      } finally {
-        setIsAuthReady(true);
-      }
+      } catch (err) { console.warn(err); } finally { setIsAuthReady(true); }
     };
     initAuth();
-
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-      setUser(currentUser);
-    });
+    const unsubscribe = onAuthStateChanged(auth, setUser);
     return () => unsubscribe();
   }, []);
 
-  // Click Outside for Custom Dropdowns
+  // --- External Clicks ---
   useEffect(() => {
     const handleClickOutside = (event) => {
-      if (categoryDropdownRef.current && !categoryDropdownRef.current.contains(event.target)) {
-        setIsCategoryDropdownOpen(false);
-      }
-      if (addTypeDropdownRef.current && !addTypeDropdownRef.current.contains(event.target)) {
-        setIsAddTypeDropdownOpen(false);
-      }
+      if (categoryDropdownRef.current && !categoryDropdownRef.current.contains(event.target)) setIsCategoryDropdownOpen(false);
+      if (addTypeDropdownRef.current && !addTypeDropdownRef.current.contains(event.target)) setIsAddTypeDropdownOpen(false);
     };
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  // --- Presence & Active User Tracking ---
+  // --- Realtime Sync ---
   useEffect(() => {
     if (!isAuthReady || !user) return;
-
     const presenceRef = getPublicDoc('presence', user.uid);
     const updatePresence = async () => {
       try {
         await setDoc(presenceRef, { 
-          lastSeen: Date.now(), 
-          uid: user.uid, 
-          email: manualInfo.memberId || "Guest Session",
-          displayName: manualInfo.displayName || "GUEST",
-          photoURL: manualInfo.photoURL || null,
+          lastSeen: Date.now(), uid: user.uid, email: manualInfo.memberId || "Guest",
+          displayName: manualInfo.displayName || "GUEST", photoURL: manualInfo.photoURL || null,
           currentProjectId: appState === 'authorized' ? currentProjectId : null 
         });
       } catch (e) {}
     };
-
     if (appState !== 'intro' && appState !== 'login') {
       updatePresence();
       const interval = setInterval(updatePresence, 30000);
       const presenceCol = getPublicCollection('presence');
       const unsubPresence = onSnapshot(presenceCol, (snapshot) => {
         const usersList = [];
-        snapshot.forEach(doc => {
-          const data = doc.data();
-          if (Date.now() - data.lastSeen < 300000) usersList.push(data);
-        });
+        snapshot.forEach(doc => { if (Date.now() - doc.data().lastSeen < 300000) usersList.push(doc.data()); });
         setActiveUsers(list => JSON.stringify(list) === JSON.stringify(usersList) ? list : usersList);
-      }, (err) => console.error("Presence Error:", err));
-
-      return () => {
-        clearInterval(interval);
-        unsubPresence();
-        deleteDoc(presenceRef).catch(() => {});
-      };
+      });
+      return () => { clearInterval(interval); unsubPresence(); deleteDoc(presenceRef).catch(()=>{}); };
     }
   }, [isAuthReady, user, currentProjectId, appState, manualInfo]);
 
-  // --- Global Settings Listeners (Categories & Components) ---
   useEffect(() => {
     if (!isAuthReady || !user) return;
-    
-    // Categories
     const catRef = getPublicDoc('settings', 'categories');
     const unsubCat = onSnapshot(catRef, (docSnap) => {
-      if (docSnap.exists() && docSnap.data().list) {
-        setAppCategories(docSnap.data().list);
-      } else {
-        setDoc(catRef, { list: ['미분류', '홈화면', '결제', '등록', '커뮤니티'] });
-      }
-    }, (err) => console.error("Cat Error:", err));
-
-    // Components & Test Cases
+      if (docSnap.exists() && docSnap.data().list) setAppCategories(docSnap.data().list);
+      else setDoc(catRef, { list: ['미분류', '홈화면', '결제', '등록', '커뮤니티'] });
+    });
     const compRef = getPublicDoc('settings', 'components');
     const unsubComp = onSnapshot(compRef, (docSnap) => {
-      if (docSnap.exists() && docSnap.data().list) {
-        setAppComponents(docSnap.data().list);
-      } else {
-        const defaultList = [
-          { type: 'Button', cases: ['클릭 이벤트 정상 동작 확인', '비활성화 상태 스타일 확인'] },
-          { type: 'Input', cases: ['키보드 입력 정상 확인', '포커스 아웃 시 데이터 유지 확인'] },
-          { type: 'Image', cases: ['이미지 정상 노출 확인', '이미지 비율 찌그러짐 확인'] },
-          { type: 'Icon', cases: ['아이콘 선명도 확인', '클릭 영역 적절성 확인'] },
-          { type: 'Text', cases: ['텍스트 잘림 현상 확인', '오탈자 확인'] },
-          { type: 'Select', cases: ['옵션 목록 노출 확인', '옵션 선택 동작 확인'] },
-          { type: 'Checkbox', cases: ['체크/해제 상태 토글 확인'] },
-          { type: 'Toggle', cases: ['ON/OFF 상태 변경 확인'] },
-          { type: 'Tab', cases: ['탭 전환 시 콘텐츠 변경 확인'] },
-          { type: 'Container', cases: ['내부 여백 및 스크롤 동작 확인'] }
-        ];
-        setDoc(compRef, { list: defaultList });
-      }
-    }, (err) => console.error("Comp Error:", err));
-
+      if (docSnap.exists() && docSnap.data().list) setAppComponents(docSnap.data().list);
+      else setDoc(compRef, { list: [
+        { type: 'Button', cases: ['클릭 이벤트 정상 동작 확인', '비활성화 상태 스타일 확인'] },
+        { type: 'Input', cases: ['키보드 입력 정상 확인', '포커스 아웃 시 데이터 유지 확인'] },
+        { type: 'Image', cases: ['이미지 정상 노출 확인', '이미지 비율 찌그러짐 확인'] },
+        { type: 'Icon', cases: ['아이콘 선명도 확인', '클릭 영역 적절성 확인'] },
+        { type: 'Text', cases: ['텍스트 잘림 현상 확인', '오탈자 확인'] }
+      ]});
+    });
     return () => { unsubCat(); unsubComp(); };
   }, [isAuthReady, user]);
 
-  // --- Firestore Real-time Listeners ---
   useEffect(() => {
     if (!isAuthReady || !user || appState === 'intro' || appState === 'login') return;
-    
-    const projectsRef = getPublicCollection('projects');
-    const unsubProjects = onSnapshot(projectsRef, (snapshot) => {
+    const unsubProjects = onSnapshot(getPublicCollection('projects'), (snapshot) => {
       const projList = [];
       snapshot.forEach(doc => projList.push({ id: doc.id, ...doc.data() }));
       setProjects(projList.sort((a, b) => (b.order || b.createdAt) - (a.order || a.createdAt)));
-    }, (err) => console.error("Proj Error:", err));
-
-    const historyRef = getPublicCollection('history');
-    const unsubHistory = onSnapshot(historyRef, (snapshot) => {
+    });
+    const unsubHistory = onSnapshot(getPublicCollection('history'), (snapshot) => {
       const histList = [];
       snapshot.forEach(doc => histList.push({ id: doc.id, ...doc.data() }));
       setHistory(histList.sort((a, b) => (b.order || b.createdAt) - (a.order || a.createdAt)));
-    }, (err) => console.error("Hist Error:", err));
-
+    });
     return () => { unsubProjects(); unsubHistory(); };
   }, [isAuthReady, user, appState]);
 
   useEffect(() => {
     if (!isAuthReady || !user || !currentProjectId) return;
-    const projDocRef = getPublicDoc('projects', currentProjectId);
-    const unsubProject = onSnapshot(projDocRef, (docSnap) => {
-      if (docSnap.exists()) {
-        setCurrentProjectData(docSnap.data());
-      } else {
-        setCurrentProjectData(null);
-        setAppState('projects');
-      }
-    }, (err) => console.error("Proj Doc Error:", err));
+    const unsubProject = onSnapshot(getPublicDoc('projects', currentProjectId), (docSnap) => {
+      if (docSnap.exists()) setCurrentProjectData(docSnap.data());
+      else { setCurrentProjectData(null); setAppState('projects'); }
+    });
     return () => unsubProject();
   }, [isAuthReady, user, currentProjectId]);
 
-  // --- Sync ActiveScan Meta ---
   useEffect(() => {
     const activeScan = currentProjectData?.activeScan;
     if (!isMetaFocused && activeScan) {
-      setScanMetaForm({ 
-        title: activeScan.title || '', 
-        category: activeScan.category || (appCategories[0] || '미분류') 
-      });
+      setScanMetaForm({ title: activeScan.title || '', category: activeScan.category || (appCategories[0] || '미분류') });
     }
   }, [currentProjectData?.activeScan?.title, currentProjectData?.activeScan?.category, isMetaFocused, appCategories]);
 
-  // --- Intro Animation ---
   useEffect(() => {
     if (appState === 'intro') {
       const interval = setInterval(() => {
         setIntroProgress(prev => {
-          if (prev >= 100) {
-            clearInterval(interval);
-            setTimeout(() => setAppState('login'), 800);
-            return 100;
-          }
+          if (prev >= 100) { clearInterval(interval); setTimeout(() => setAppState('login'), 800); return 100; }
           return prev + 2.5;
         });
       }, 30);
@@ -460,27 +352,19 @@ const App = () => {
     }
   }, [appState]);
 
-  // --- Handlers ---
+  // --- Action Handlers ---
   const handleCustomRegister = async () => {
     const safeId = memberId.trim();
-    if (!safeId || !memberPw || !memberName) {
-      setLoginErrorMsg("모든 필드를 입력해주세요."); return;
-    }
-    if (safeId.includes('/')) {
-      setLoginErrorMsg("ID에 사용할 수 없는 문자(/)가 포함되어 있습니다."); return;
-    }
+    if (!safeId || !memberPw || !memberName) { setLoginErrorMsg("모든 필드를 입력해주세요."); return; }
+    if (safeId.includes('/')) { setLoginErrorMsg("사용 불가한 문자가 포함되어 있습니다."); return; }
     setIsLoggingIn(true); setLoginErrorMsg('');
     try {
       const memberRef = getPublicDoc('members', safeId);
-      const snap = await getDoc(memberRef);
-      if (snap.exists()) { setLoginErrorMsg("이미 사용 중인 접속 ID입니다."); setIsLoggingIn(false); return; }
+      if ((await getDoc(memberRef)).exists()) { setLoginErrorMsg("이미 사용 중인 접속 ID입니다."); setIsLoggingIn(false); return; }
       await setDoc(memberRef, { id: safeId, password: memberPw, displayName: memberName, photoURL: '', createdAt: Date.now() });
       setManualInfo({ displayName: memberName, photoURL: '', memberId: safeId });
-      setPrevAppState('projects');
       setAppState('manualProfile');
-    } catch (e) {
-      setLoginErrorMsg("가입 처리 중 데이터베이스 오류가 발생했습니다.");
-    } finally { setIsLoggingIn(false); }
+    } catch (e) { setLoginErrorMsg("가입 중 오류가 발생했습니다."); } finally { setIsLoggingIn(false); }
   };
 
   const handleCustomLogin = async () => {
@@ -488,38 +372,30 @@ const App = () => {
     if (!safeId || !memberPw) { setLoginErrorMsg("접속 ID와 비밀번호를 입력해주세요."); return; }
     setIsLoggingIn(true); setLoginErrorMsg('');
     try {
-      const memberRef = getPublicDoc('members', safeId);
-      const snap = await getDoc(memberRef);
-      if (!snap.exists()) { setLoginErrorMsg("존재하지 않는 접속 ID입니다."); setIsLoggingIn(false); return; }
-      const data = snap.data();
-      if (data.password !== memberPw) { setLoginErrorMsg("비밀번호가 일치하지 않습니다."); setIsLoggingIn(false); return; }
-      setManualInfo({ displayName: data.displayName, photoURL: data.photoURL, memberId: safeId });
+      const snap = await getDoc(getPublicDoc('members', safeId));
+      if (!snap.exists() || snap.data().password !== memberPw) { setLoginErrorMsg("ID나 비밀번호가 틀립니다."); setIsLoggingIn(false); return; }
+      setManualInfo({ displayName: snap.data().displayName, photoURL: snap.data().photoURL, memberId: safeId });
       setAppState('projects');
-    } catch (e) {
-      setLoginErrorMsg("로그인 처리 중 오류가 발생했습니다.");
-    } finally { setIsLoggingIn(false); }
+    } catch (e) { setLoginErrorMsg("로그인 중 오류가 발생했습니다."); } finally { setIsLoggingIn(false); }
   };
 
   const handleLogout = async () => {
-    setAppState('login');
-    setManualInfo({ displayName: '', photoURL: '', memberId: null });
+    setAppState('login'); setManualInfo({ displayName: '', photoURL: '', memberId: null });
     setMemberId(''); setMemberPw(''); setMemberName(''); setLoginErrorMsg('');
   };
 
   const handleProfileImageUpload = (e) => {
-    const file = e.target.files && e.target.files[0];
+    const file = e.target.files?.[0];
     if (file && file.type.startsWith('image/')) {
       const reader = new FileReader();
       reader.onload = (event) => {
         const img = new Image();
         img.onload = () => {
           const canvas = document.createElement('canvas');
-          const MAX_SIZE = 150;
-          let width = img.width, height = img.height;
-          if (width > height) { if (width > MAX_SIZE) { height *= MAX_SIZE / width; width = MAX_SIZE; } } 
-          else { if (height > MAX_SIZE) { width *= MAX_SIZE / height; height = MAX_SIZE; } }
-          canvas.width = width; canvas.height = height;
-          const ctx = canvas.getContext('2d'); ctx.drawImage(img, 0, 0, width, height);
+          let w = img.width, h = img.height, MAX = 150;
+          if (w > h) { if (w > MAX) { h *= MAX / w; w = MAX; } } else { if (h > MAX) { w *= MAX / h; h = MAX; } }
+          canvas.width = w; canvas.height = h;
+          canvas.getContext('2d').drawImage(img, 0, 0, w, h);
           setManualInfo({...manualInfo, photoURL: canvas.toDataURL('image/jpeg', 0.8)});
         };
         img.src = event.target.result;
@@ -528,115 +404,58 @@ const App = () => {
     }
   };
 
-  const navigateToProfile = () => {
-    setPrevAppState(appState);
-    setAppState('manualProfile');
-  };
+  const navigateToProfile = () => { setPrevAppState(appState); setAppState('manualProfile'); };
 
   const createNewProject = async () => {
     if (!newProjectName.trim() || !user) return;
-    const newProjectId = `proj_${Date.now()}`;
-    await setDoc(getPublicDoc('projects', newProjectId), {
+    const pid = `proj_${Date.now()}`;
+    await setDoc(getPublicDoc('projects', pid), {
       name: newProjectName.trim(), createdAt: Date.now(), order: Date.now(),
       createdBy: manualInfo.memberId || user.uid, createdByName: manualInfo.displayName || "GUEST", createdByPhoto: manualInfo.photoURL || null,
       isAnalyzing: false, status: 'READY', activeScan: null
     });
-    setNewProjectName(''); 
-    setIsNewProjectModalOpen(false);
-    setCurrentProjectId(newProjectId);
-    
-    setAppState('projectLanding');
-    setIsLandingExiting(false);
-    setIsAuthorizedEntering(false);
-    
+    setNewProjectName(''); setIsNewProjectModalOpen(false); setCurrentProjectId(pid);
+    setAppState('projectLanding'); setIsLandingExiting(false); setIsAuthorizedEntering(false);
     setTimeout(() => {
       setIsLandingExiting(true);
-      setTimeout(() => {
-        setAppState('authorized');
-        setIsLandingExiting(false);
-        setIsAuthorizedEntering(true);
-        setTimeout(() => {
-          setIsAuthorizedEntering(false);
-        }, 1200);
-      }, 1200);
+      setTimeout(() => { setAppState('authorized'); setIsLandingExiting(false); setIsAuthorizedEntering(true); setTimeout(() => setIsAuthorizedEntering(false), 1200); }, 1200);
     }, 2800);
   };
 
-  const selectProject = (id) => { setCurrentProjectId(id); setAppState('authorized'); };
-
   // --- Project Action Handlers ---
-  const handlePressStart = (proj) => {
+  const handlePressStart = (id) => {
     isLongPressTriggeredRef.current = false;
-    longPressTimerRef.current = setTimeout(() => {
-      isLongPressTriggeredRef.current = true;
-      setShowActionsProjId(proj.id);
-    }, 600);
+    longPressTimerRef.current = setTimeout(() => { isLongPressTriggeredRef.current = true; setShowActionsProjId(id); }, 600);
   };
-
-  const handlePressEnd = () => {
-    if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
-  };
-
+  const handlePressEnd = () => { if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current); };
   const handleProjectClick = (id) => {
-    if (!isLongPressTriggeredRef.current) {
-      if (showActionsProjId) {
-         setShowActionsProjId(null);
-         return;
-      }
-      selectProject(id);
-    }
+    if (!isLongPressTriggeredRef.current) { if (showActionsProjId) { setShowActionsProjId(null); return; } setCurrentProjectId(id); setAppState('authorized'); }
     setTimeout(() => { isLongPressTriggeredRef.current = false; }, 100);
   };
-
-  const handleDragStart = (e, id) => {
-    if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
-    setDraggedProjectId(id);
-  };
-
-  const handleDragOver = (e, id) => {
-    e.preventDefault();
-    if (dragOverProjectId !== id) setDragOverProjectId(id);
-  };
-
-  const handleDragEnd = () => {
-    setDraggedProjectId(null);
-    setDragOverProjectId(null);
-  };
-
+  const handleDragStart = (e, id) => { if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current); setDraggedProjectId(id); };
+  const handleDragOver = (e, id) => { e.preventDefault(); setDragOverProjectId(id); };
+  const handleDragEnd = () => { setDraggedProjectId(null); setDragOverProjectId(null); };
   const handleDrop = async (e, targetId) => {
-    e.preventDefault();
-    setDragOverProjectId(null);
+    e.preventDefault(); setDragOverProjectId(null);
     if (!draggedProjectId || draggedProjectId === targetId) return;
-
-    const draggedIdx = projects.findIndex(p => p.id === draggedProjectId);
-    const targetIdx = projects.findIndex(p => p.id === targetId);
-
-    if (draggedIdx === -1 || targetIdx === -1) return;
-
-    const newProjects = [...projects];
-    const [draggedItem] = newProjects.splice(draggedIdx, 1);
-    newProjects.splice(targetIdx, 0, draggedItem);
-
-    const baseTime = Date.now();
-    newProjects.forEach((proj, idx) => {
-      const newOrder = baseTime - idx * 1000;
-      if (proj.order !== newOrder) {
-        updateDoc(getPublicDoc('projects', proj.id), { order: newOrder });
-      }
-    });
+    const newProjs = [...projects];
+    const from = newProjs.findIndex(p => p.id === draggedProjectId);
+    const to = newProjs.findIndex(p => p.id === targetId);
+    if (from === -1 || to === -1) return;
+    const [moved] = newProjs.splice(from, 1);
+    newProjs.splice(to, 0, moved);
+    newProjs.forEach((p, i) => updateDoc(getPublicDoc('projects', p.id), { order: Date.now() - i * 1000 }));
     setDraggedProjectId(null);
   };
-
   const renameProject = async () => {
     if (!longPressedProject || !editProjectNameVal.trim()) return;
     await updateDoc(getPublicDoc('projects', longPressedProject.id), { name: editProjectNameVal.trim() });
-    setIsEditProjectName(false);
-    setLongPressedProject(null);
+    setIsEditProjectName(false); setLongPressedProject(null);
   };
 
   const isProjectClosed = currentProjectData?.status === 'CLOSED';
 
-  // --- Editor Core Actions (AI 분석 로직 - 최신 모델 및 빌드 버그 방지) ---
+  // --- API Analysis Logic (빌드 에러 및 흰화면 완벽 대응) ---
   const analyzeScreenshot = async (base64Data, imageSrc) => {
     if (!base64Data || !currentProjectId || !user || isProjectClosed) return;
     const projectRef = getPublicDoc('projects', currentProjectId);
@@ -656,43 +475,30 @@ const App = () => {
 
     const callApi = async (attempt = 0) => {
       try {
-        // [해결] 404 및 400 Bad Request 방지를 위해 정식 지원이 확인된 최신 모델과 v1beta 엔드포인트를 사용합니다.
         const aiModel = isCanvas ? 'gemini-2.5-flash-preview-09-2025' : 'gemini-2.5-flash';
         const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${aiModel}:generateContent?key=${apiKey}`;
 
-        const response = await fetch(apiUrl, {
-          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
-        });
-        
+        const response = await fetch(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
         if (!response.ok) {
-          const errorData = await response.json();
-          const errorMsg = errorData.error?.message || `HTTP 에러 ${response.status}`;
-          throw new Error(errorMsg);
+          const errData = await response.json();
+          throw new Error(errData.error?.message || "API 통신 실패");
         }
-        
         const data = await response.json();
         
-        // [해결] Vercel esbuild 빌드 에러(Unterminated regular expression)를 원천 차단하기 위해 
-        // 정규식이나 백틱을 사용하지 않고 String.fromCharCode(96) 아스키코드로 우회하여 텍스트를 자릅니다.
+        // 정규식 오류 회피
         const textResult = data.candidates?.[0]?.content?.parts?.[0]?.text || "{}";
         const bt = String.fromCharCode(96, 96, 96);
         const cleanText = textResult.split(bt + 'json').join('').split(bt).join('').trim();
         const parsed = JSON.parse(cleanText);
         
-        const componentMap = (appComponents || []).reduce((acc, curr) => {
-           acc[curr.type] = curr.cases;
-           return acc;
-        }, {});
-
-        const mappedObjects = (parsed.objects || []).map(obj => {
+        const componentMap = (appComponents || []).reduce((acc, curr) => { acc[curr.type] = curr.cases; return acc; }, {});
+        return (parsed.objects || []).map(obj => {
            const typeCases = componentMap[obj.type] || [];
            const tcArray = typeCases.map((c, i) => ({ id: `tc_${Date.now()}_${Math.random().toString(36).substr(2, 9)}_${i}`, label: c, status: 'PENDING' }));
            return { ...obj, id: `auto_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`, status: 'PENDING', testCases: tcArray };
         });
-        return mappedObjects;
-
       } catch (err) {
-        if (attempt < 2 && !err.message.includes('API key not valid')) { 
+        if (attempt < 2 && !err.message.includes('API key')) { 
             await new Promise(r => setTimeout(r, Math.pow(2, attempt) * 1000)); return callApi(attempt + 1); 
         }
         throw err;
@@ -703,22 +509,13 @@ const App = () => {
       const results = await callApi();
       await updateDoc(projectRef, { 'activeScan.testObjects': results, isAnalyzing: false });
     } catch (err) {
-      console.error("AI Analysis Error:", err);
-      let korError = err.message;
-      if (err.message.includes('API key not valid')) korError = "API 키가 올바르지 않거나 잘못 입력되었습니다. Vercel 환경 변수를 다시 확인하세요.";
-      else if (err.message.includes('not found') || err.message.includes('404')) korError = "해당 AI 모델에 접근할 수 없습니다. 새 프로젝트에서 발급받은 키인지 확인하세요.";
-      
-      await updateDoc(projectRef, { 
-        isAnalyzing: false,
-        'activeScan.title': '⚠️ 분석 실패',
-        'activeScan.description': '원인: ' + korError
-      });
+      await updateDoc(projectRef, { isAnalyzing: false, 'activeScan.title': '⚠️ 분석 실패', 'activeScan.description': '원인: ' + err.message });
     }
   };
 
   const handleFileChange = (e) => {
     if (isProjectClosed) return;
-    const file = e.target.files && e.target.files[0];
+    const file = e.target.files?.[0];
     if (file && file.type.startsWith('image/')) {
       const reader = new FileReader();
       reader.onload = (event) => analyzeScreenshot(event.target.result.split(',')[1], event.target.result);
@@ -726,147 +523,97 @@ const App = () => {
     }
   };
 
-  const updateActiveScanField = async (field, value) => {
-    if (!currentProjectId || !user || isProjectClosed) return;
-    await updateDoc(getPublicDoc('projects', currentProjectId), { [`activeScan.${field}`]: value });
-  };
-
   const saveMetaFields = async () => {
     if (!currentProjectId || !user || isProjectClosed) return;
-    const projectRef = getPublicDoc('projects', currentProjectId);
-    await updateDoc(projectRef, {
-      'activeScan.title': scanMetaForm.title,
-      'activeScan.category': scanMetaForm.category
-    });
+    await updateDoc(getPublicDoc('projects', currentProjectId), { 'activeScan.title': scanMetaForm.title, 'activeScan.category': scanMetaForm.category });
   };
 
   const toggleStatus = async (id, currentStatus) => {
-    if (!currentProjectData?.activeScan?.testObjects || isProjectClosed) return;
-    // 흰 화면 방지: testObjects 배열 안전 참조
-    const testObjects = currentProjectData.activeScan.testObjects || [];
+    if (isProjectClosed) return;
+    const testObjects = currentProjectData?.activeScan?.testObjects || [];
     const nextStatus = currentStatus === 'PENDING' ? 'PASS' : (currentStatus === 'PASS' ? 'FAIL' : 'PENDING');
     const updatedObjects = testObjects.map(obj => obj.id === id ? { ...obj, status: nextStatus } : obj);
-    await updateActiveScanField('testObjects', updatedObjects);
+    await updateDoc(getPublicDoc('projects', currentProjectId), { 'activeScan.testObjects': updatedObjects });
   };
 
   const toggleTestCaseStatus = async (objId, tcId, newStatus) => {
-    if (!currentProjectData?.activeScan?.testObjects || isProjectClosed) return;
-    const testObjects = currentProjectData.activeScan.testObjects || [];
-    
+    if (isProjectClosed) return;
+    const testObjects = currentProjectData?.activeScan?.testObjects || [];
     const updatedObjects = testObjects.map(obj => {
       if (obj.id === objId) {
          const updatedCases = (obj.testCases || []).map(tc => tc.id === tcId ? { ...tc, status: newStatus } : tc);
-         
          const isFail = updatedCases.some(tc => tc.status === 'FAIL');
          const isPending = updatedCases.some(tc => tc.status === 'PENDING');
          let parentStatus = 'PENDING';
-         if (isFail) parentStatus = 'FAIL';
-         else if (!isPending && updatedCases.length > 0) parentStatus = 'PASS';
-         
+         if (isFail) parentStatus = 'FAIL'; else if (!isPending && updatedCases.length > 0) parentStatus = 'PASS';
          return { ...obj, testCases: updatedCases, status: parentStatus };
       }
       return obj;
     });
-    
-    await updateActiveScanField('testObjects', updatedObjects);
+    await updateDoc(getPublicDoc('projects', currentProjectId), { 'activeScan.testObjects': updatedObjects });
   };
 
   const deleteObject = async (id) => {
-    if (!currentProjectData?.activeScan?.testObjects || isProjectClosed) return;
-    const testObjects = currentProjectData.activeScan.testObjects || [];
+    if (isProjectClosed) return;
+    const testObjects = currentProjectData?.activeScan?.testObjects || [];
     const updatedObjects = testObjects.filter(obj => obj.id !== id);
-    await updateActiveScanField('testObjects', updatedObjects);
+    await updateDoc(getPublicDoc('projects', currentProjectId), { 'activeScan.testObjects': updatedObjects });
   };
 
   const saveEditedObject = async () => {
-    if (!currentProjectData?.activeScan?.testObjects || isProjectClosed) return;
-    if (!editObjForm.label.trim()) return;
-    
-    const componentMap = (appComponents || []).reduce((acc, curr) => {
-       acc[curr.type] = curr.cases;
-       return acc;
-    }, {});
-
-    const testObjects = currentProjectData.activeScan.testObjects || [];
+    if (isProjectClosed || !editObjForm.label.trim()) return;
+    const componentMap = (appComponents || []).reduce((acc, curr) => { acc[curr.type] = curr.cases; return acc; }, {});
+    const testObjects = currentProjectData?.activeScan?.testObjects || [];
     const updatedObjects = testObjects.map(obj => {
       if (obj.id === editingObjId) {
          let newTestCases = obj.testCases || [];
          let parentStatus = obj.status;
-         
          if (obj.type !== editObjForm.type) {
              const typeCases = componentMap[editObjForm.type] || [];
-             newTestCases = typeCases.map((c, i) => ({ id: `tc_${Date.now()}_${Math.random().toString(36).substr(2, 9)}_${i}`, label: c, status: 'PENDING' }));
+             newTestCases = typeCases.map((c, i) => ({ id: `tc_${Date.now()}_${i}`, label: c, status: 'PENDING' }));
              parentStatus = 'PENDING';
          }
          return { ...obj, ...editObjForm, testCases: newTestCases, status: parentStatus };
       }
       return obj;
     });
-    
-    await updateActiveScanField('testObjects', updatedObjects);
+    await updateDoc(getPublicDoc('projects', currentProjectId), { 'activeScan.testObjects': updatedObjects });
     setEditingObjId(null);
   };
 
   const addNewObject = async () => {
-    if (!currentProjectData?.activeScan || isProjectClosed) return;
-    if (!addObjForm.label.trim()) return;
-    
-    const componentMap = (appComponents || []).reduce((acc, curr) => {
-       acc[curr.type] = curr.cases;
-       return acc;
-    }, {});
+    if (isProjectClosed || !addObjForm.label.trim()) return;
+    const componentMap = (appComponents || []).reduce((acc, curr) => { acc[curr.type] = curr.cases; return acc; }, {});
     const typeCases = componentMap[addObjForm.type] || [];
-    const tcArray = typeCases.map((c, i) => ({ id: `tc_${Date.now()}_${Math.random().toString(36).substr(2, 9)}_${i}`, label: c, status: 'PENDING' }));
-
-    const newObj = {
-      ...addObjForm,
-      id: `manual_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-      status: 'PENDING',
-      testCases: tcArray
-    };
-    
-    const testObjects = currentProjectData.activeScan.testObjects || [];
-    const updatedObjects = [...testObjects, newObj];
-    await updateActiveScanField('testObjects', updatedObjects);
-    setIsAddingObj(false);
-    setAddObjForm({ label: '', description: '', type: objectTypes[0] || 'Button' });
+    const tcArray = typeCases.map((c, i) => ({ id: `tc_${Date.now()}_${i}`, label: c, status: 'PENDING' }));
+    const newObj = { ...addObjForm, id: `manual_${Date.now()}`, status: 'PENDING', testCases: tcArray };
+    const testObjects = currentProjectData?.activeScan?.testObjects || [];
+    await updateDoc(getPublicDoc('projects', currentProjectId), { 'activeScan.testObjects': [...testObjects, newObj] });
+    setIsAddingObj(false); setAddObjForm({ label: '', description: '', type: objectTypes[0] || 'Button' });
   };
 
   const addTestCaseToObject = async (objId) => {
-    if (!currentProjectData?.activeScan?.testObjects || isProjectClosed) return;
-    if (!newTestCaseLabel.trim()) return;
-
-    const testObjects = currentProjectData.activeScan.testObjects || [];
+    if (isProjectClosed || !newTestCaseLabel.trim()) return;
+    const testObjects = currentProjectData?.activeScan?.testObjects || [];
     const updatedObjects = testObjects.map(obj => {
       if (obj.id === objId) {
-        const newCase = {
-          id: `tc_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-          label: newTestCaseLabel.trim(),
-          status: 'PENDING'
-        };
+        const newCase = { id: `tc_${Date.now()}`, label: newTestCaseLabel.trim(), status: 'PENDING' };
         const updatedCases = [...(obj.testCases || []), newCase];
-        
         const isFail = updatedCases.some(tc => tc.status === 'FAIL');
         const isPending = updatedCases.some(tc => tc.status === 'PENDING');
         let parentStatus = 'PENDING';
-        if (isFail) parentStatus = 'FAIL';
-        else if (!isPending && updatedCases.length > 0) parentStatus = 'PASS';
-
+        if (isFail) parentStatus = 'FAIL'; else if (!isPending && updatedCases.length > 0) parentStatus = 'PASS';
         return { ...obj, testCases: updatedCases, status: parentStatus };
       }
       return obj;
     });
-
-    await updateActiveScanField('testObjects', updatedObjects);
-    setNewTestCaseLabel('');
-    setNewTestCaseLabelObjId(null);
+    await updateDoc(getPublicDoc('projects', currentProjectId), { 'activeScan.testObjects': updatedObjects });
+    setNewTestCaseLabel(''); setNewTestCaseLabelObjId(null);
   };
 
   const saveEditedTestCase = async (objId) => {
-    if (!currentProjectData?.activeScan?.testObjects || isProjectClosed) return;
-    if (!editingTestCaseLabel.trim()) return;
-
-    const testObjects = currentProjectData.activeScan.testObjects || [];
+    if (isProjectClosed || !editingTestCaseLabel.trim()) return;
+    const testObjects = currentProjectData?.activeScan?.testObjects || [];
     const updatedObjects = testObjects.map(obj => {
       if (obj.id === objId) {
         const updatedCases = (obj.testCases || []).map(tc => tc.id === editingTestCaseId ? { ...tc, label: editingTestCaseLabel.trim() } : tc);
@@ -874,39 +621,31 @@ const App = () => {
       }
       return obj;
     });
-
-    await updateActiveScanField('testObjects', updatedObjects);
+    await updateDoc(getPublicDoc('projects', currentProjectId), { 'activeScan.testObjects': updatedObjects });
     setEditingTestCaseId(null);
   };
 
   const deleteTestCaseFromObject = async (objId, tcId) => {
-    if (!currentProjectData?.activeScan?.testObjects || isProjectClosed) return;
-
-    const testObjects = currentProjectData.activeScan.testObjects || [];
+    if (isProjectClosed) return;
+    const testObjects = currentProjectData?.activeScan?.testObjects || [];
     const updatedObjects = testObjects.map(obj => {
       if (obj.id === objId) {
         const updatedCases = (obj.testCases || []).filter(tc => tc.id !== tcId);
-
         const isFail = updatedCases.some(tc => tc.status === 'FAIL');
         const isPending = updatedCases.some(tc => tc.status === 'PENDING');
         let parentStatus = 'PENDING';
-        if (isFail) parentStatus = 'FAIL';
-        else if (!isPending && updatedCases.length > 0) parentStatus = 'PASS';
-
+        if (isFail) parentStatus = 'FAIL'; else if (!isPending && updatedCases.length > 0) parentStatus = 'PASS';
         return { ...obj, testCases: updatedCases, status: parentStatus };
       }
       return obj;
     });
-
-    await updateActiveScanField('testObjects', updatedObjects);
+    await updateDoc(getPublicDoc('projects', currentProjectId), { 'activeScan.testObjects': updatedObjects });
   };
 
   const saveCurrentToHistory = async () => {
     const scan = currentProjectData?.activeScan;
-    if (!scan || !scan.image || !user || !currentProjectId || isProjectClosed) return;
-    
+    if (!scan || !scan.image || isProjectClosed) return;
     setIsSavingReport(true);
-    
     try {
       const testObjects = scan.testObjects || [];
       const stats = {
@@ -915,39 +654,15 @@ const App = () => {
         fail: testObjects.filter(o => o.status === 'FAIL').length,
         pending: testObjects.filter(o => o.status === 'PENDING').length
       };
-      
-      const minDelay = new Promise(resolve => setTimeout(resolve, 2500));
-      
-      const saveOp = async () => {
-        await addDoc(getPublicCollection('history'), {
-          projectId: currentProjectId, createdAt: Date.now(), order: Date.now(), timestamp: new Date().toLocaleString(),
-          title: scanMetaForm.title || scan.title || "제목 없는 리포트", description: scan.description || "설명이 없습니다.",
-          category: scanMetaForm.category || scan.category || appCategories[0] || '미분류', image: scan.image, base64Image: scan.base64Image,
-          testObjects: [...testObjects], stats,
-          savedBy: manualInfo.memberId || user.uid, savedByName: manualInfo.displayName || "GUEST", savedByPhoto: manualInfo.photoURL || null
-        });
-      };
-
-      await Promise.all([saveOp(), minDelay]);
-      
+      await addDoc(getPublicCollection('history'), {
+        projectId: currentProjectId, createdAt: Date.now(), order: Date.now(), timestamp: new Date().toLocaleString(),
+        title: scanMetaForm.title || scan.title || "제목 없는 리포트", description: scan.description || "설명이 없습니다.",
+        category: scanMetaForm.category || scan.category || appCategories[0] || '미분류', image: scan.image, base64Image: scan.base64Image,
+        testObjects: [...testObjects], stats, savedBy: manualInfo.memberId || user.uid, savedByName: manualInfo.displayName || "GUEST", savedByPhoto: manualInfo.photoURL || null
+      });
       await updateDoc(getPublicDoc('projects', currentProjectId), { activeScan: null });
       setIsHistoryOpen(true);
-    } catch (error) {
-      console.error("Save failed:", error);
-    } finally {
-      setIsSavingReport(false);
-    }
-  };
-
-  const loadFromHistory = async (item) => {
-    if (!currentProjectId || !user || isProjectClosed) return;
-    await updateDoc(getPublicDoc('projects', currentProjectId), {
-      status: 'IN PROGRESS',
-      activeScan: { image: item.image, base64Image: item.base64Image, title: item.title, description: item.description, category: item.category, testObjects: [...(item.testObjects || [])] }
-    });
-    setSelectedHistoryItem(null); 
-    setSelectedFolder(null);
-    setIsHistoryOpen(false);
+    } catch (e) {} finally { setIsSavingReport(false); }
   };
 
   const handleCloseProject = async () => {
@@ -956,96 +671,46 @@ const App = () => {
     setIsCloseProjectModalOpen(false);
   };
 
-  // --- History Interaction Handlers ---
-  const handleHistoryPressStart = (item) => {
+  // --- History Logic ---
+  const handleHistoryPressStart = (id) => {
     isHistoryLongPressTriggeredRef.current = false;
-    historyLongPressTimerRef.current = setTimeout(() => {
-      isHistoryLongPressTriggeredRef.current = true;
-      setShowActionsHistoryId(item.id);
-    }, 600);
+    historyLongPressTimerRef.current = setTimeout(() => { isHistoryLongPressTriggeredRef.current = true; setShowActionsHistoryId(id); }, 600);
   };
-
-  const handleHistoryPressEnd = () => {
-    if (historyLongPressTimerRef.current) clearTimeout(historyLongPressTimerRef.current);
-  };
-
+  const handleHistoryPressEnd = () => { if (historyLongPressTimerRef.current) clearTimeout(historyLongPressTimerRef.current); };
   const handleHistoryClick = (item) => {
-    if (!isHistoryLongPressTriggeredRef.current) {
-      if (showActionsHistoryId) {
-         setShowActionsHistoryId(null);
-         return;
-      }
-      setSelectedHistoryItem(item);
-    }
+    if (!isHistoryLongPressTriggeredRef.current) { if (showActionsHistoryId) { setShowActionsHistoryId(null); return; } setSelectedHistoryItem(item); }
     setTimeout(() => { isHistoryLongPressTriggeredRef.current = false; }, 100);
   };
-
-  const deleteHistory = async (e, id) => {
-     e.stopPropagation();
-     await deleteDoc(getPublicDoc('history', id));
-     setShowActionsHistoryId(null);
-  };
-
-  const handleHistoryDragStart = (e, id) => {
-    if (historyLongPressTimerRef.current) clearTimeout(historyLongPressTimerRef.current);
-    setDraggedHistoryId(id);
-  };
-
-  const handleHistoryDragOver = (e, id) => {
-    e.preventDefault();
-    if (dragOverHistoryId !== id) setDragOverHistoryId(id);
-  };
-
-  const handleHistoryDragEnd = () => {
-    setDraggedHistoryId(null);
-    setDragOverHistoryId(null);
-  };
-
+  const handleHistoryDragStart = (e, id) => { setDraggedHistoryId(id); };
+  const handleHistoryDragOver = (e, id) => { e.preventDefault(); setDragOverHistoryId(id); };
+  const handleHistoryDragEnd = () => { setDraggedHistoryId(null); setDragOverHistoryId(null); };
   const handleHistoryDrop = async (e, targetId) => {
-    e.preventDefault();
-    setDragOverHistoryId(null);
+    e.preventDefault(); setDragOverHistoryId(null);
     if (!draggedHistoryId || draggedHistoryId === targetId) return;
-
     const folderHistories = groupedHistory[selectedFolder] || [];
-    const draggedIdx = folderHistories.findIndex(h => h.id === draggedHistoryId);
-    const targetIdx = folderHistories.findIndex(h => h.id === targetId);
-
-    if (draggedIdx === -1 || targetIdx === -1) return;
-
+    const fromIdx = folderHistories.findIndex(h => h.id === draggedHistoryId);
+    const toIdx = folderHistories.findIndex(h => h.id === targetId);
+    if (fromIdx === -1 || toIdx === -1) return;
     const newFolderHistories = [...folderHistories];
-    const [draggedItem] = newFolderHistories.splice(draggedIdx, 1);
-    newFolderHistories.splice(targetIdx, 0, draggedItem);
-
+    const [draggedItem] = newFolderHistories.splice(fromIdx, 1);
+    newFolderHistories.splice(toIdx, 0, draggedItem);
     const baseTime = Date.now();
-    newFolderHistories.forEach((item, idx) => {
-      const newOrder = baseTime - idx * 1000;
-      if (item.order !== newOrder) {
-        updateDoc(getPublicDoc('history', item.id), { order: newOrder });
-      }
-    });
+    newFolderHistories.forEach((item, idx) => { updateDoc(getPublicDoc('history', item.id), { order: baseTime - idx * 1000 }); });
     setDraggedHistoryId(null);
   };
 
-  // --- History Direct Edit Handlers ---
   const toggleHistoryObjStatus = (objId) => {
      if (!selectedHistoryItem || isProjectClosed) return;
      const updatedObjects = (selectedHistoryItem.testObjects || []).map(obj => {
         if (obj.id === objId) {
-           const currentStatus = obj.status;
-           const nextStatus = currentStatus === 'PENDING' ? 'PASS' : (currentStatus === 'PASS' ? 'FAIL' : 'PENDING');
+           const nextStatus = obj.status === 'PENDING' ? 'PASS' : (obj.status === 'PASS' ? 'FAIL' : 'PENDING');
            return { ...obj, status: nextStatus };
         }
         return obj;
      });
-     const stats = {
-        total: updatedObjects.length,
-        pass: updatedObjects.filter(o => o.status === 'PASS').length,
-        fail: updatedObjects.filter(o => o.status === 'FAIL').length,
-        pending: updatedObjects.filter(o => o.status === 'PENDING').length
-     };
+     const stats = { total: updatedObjects.length, pass: updatedObjects.filter(o => o.status === 'PASS').length, fail: updatedObjects.filter(o => o.status === 'FAIL').length, pending: updatedObjects.filter(o => o.status === 'PENDING').length };
      setSelectedHistoryItem({ ...selectedHistoryItem, testObjects: updatedObjects, stats });
   };
-
   const toggleHistoryTCStatus = (objId, tcId, newStatus) => {
      if (!selectedHistoryItem || isProjectClosed) return;
      const updatedObjects = (selectedHistoryItem.testObjects || []).map(obj => {
@@ -1053,181 +718,95 @@ const App = () => {
            const updatedCases = (obj.testCases || []).map(tc => tc.id === tcId ? { ...tc, status: newStatus } : tc);
            const isFail = updatedCases.some(tc => tc.status === 'FAIL');
            const isPending = updatedCases.some(tc => tc.status === 'PENDING');
-           let parentStatus = 'PENDING';
-           if (isFail) parentStatus = 'FAIL';
-           else if (!isPending && updatedCases.length > 0) parentStatus = 'PASS';
-           return { ...obj, testCases: updatedCases, status: parentStatus };
+           return { ...obj, testCases: updatedCases, status: isFail ? 'FAIL' : (isPending ? 'PENDING' : 'PASS') };
         }
         return obj;
      });
-     const stats = {
-        total: updatedObjects.length,
-        pass: updatedObjects.filter(o => o.status === 'PASS').length,
-        fail: updatedObjects.filter(o => o.status === 'FAIL').length,
-        pending: updatedObjects.filter(o => o.status === 'PENDING').length
-     };
+     const stats = { total: updatedObjects.length, pass: updatedObjects.filter(o => o.status === 'PASS').length, fail: updatedObjects.filter(o => o.status === 'FAIL').length, pending: updatedObjects.filter(o => o.status === 'PENDING').length };
      setSelectedHistoryItem({ ...selectedHistoryItem, testObjects: updatedObjects, stats });
   };
-
   const saveHistoryChanges = async () => {
      if (!selectedHistoryItem || isProjectClosed) return;
-     await updateDoc(getPublicDoc('history', selectedHistoryItem.id), {
-        testObjects: selectedHistoryItem.testObjects || [],
-        stats: selectedHistoryItem.stats
-     });
+     await updateDoc(getPublicDoc('history', selectedHistoryItem.id), { testObjects: selectedHistoryItem.testObjects || [], stats: selectedHistoryItem.stats });
      setSelectedHistoryItem(null);
   };
 
-  // --- Group Action Handlers ---
+  // --- Group Logic ---
   const handleGroupPressStart = (cat) => {
     isGroupLongPressTriggeredRef.current = false;
-    groupLongPressTimerRef.current = setTimeout(() => {
-      isGroupLongPressTriggeredRef.current = true;
-      setShowActionsGroupCat(cat);
-    }, 600);
+    groupLongPressTimerRef.current = setTimeout(() => { isGroupLongPressTriggeredRef.current = true; setShowActionsGroupCat(cat); }, 600);
   };
-
-  const handleGroupPressEnd = () => {
-    if (groupLongPressTimerRef.current) clearTimeout(groupLongPressTimerRef.current);
-  };
-
+  const handleGroupPressEnd = () => { if (groupLongPressTimerRef.current) clearTimeout(groupLongPressTimerRef.current); };
   const handleGroupClick = (cat) => {
-    if (!isGroupLongPressTriggeredRef.current) {
-      if (showActionsGroupCat) {
-         setShowActionsGroupCat(null);
-         return;
-      }
-      setSelectedFolder(cat);
-    }
-    setTimeout(() => { isGroupLongPressTriggeredRef.current = false; }, 100);
+    if (!isGroupLongPressTriggeredRef.current) { if (showActionsGroupCat) { setShowActionsGroupCat(null); return; } setSelectedFolder(cat); }
   };
-
-  const handleGroupDragStart = (e, cat) => {
-    if (groupLongPressTimerRef.current) clearTimeout(groupLongPressTimerRef.current);
-    setDraggedGroupCat(cat);
-  };
-
-  const handleGroupDragOver = (e, cat) => {
-    e.preventDefault();
-    if (dragOverGroupCat !== cat) setDragOverGroupCat(cat);
-  };
-
-  const handleGroupDragEnd = () => {
-    setDraggedGroupCat(null);
-    setDragOverGroupCat(null);
-  };
-
+  const handleGroupDragStart = (e, cat) => { setDraggedGroupCat(cat); };
+  const handleGroupDragOver = (e, cat) => { e.preventDefault(); setDragOverGroupCat(cat); };
+  const handleGroupDragEnd = () => { setDraggedGroupCat(null); setDragOverGroupCat(null); };
   const handleGroupDrop = async (e, targetCat) => {
-    e.preventDefault();
-    setDragOverGroupCat(null);
+    e.preventDefault(); setDragOverGroupCat(null);
     if (!draggedGroupCat || draggedGroupCat === targetCat) return;
-
     let newList = [...appCategories];
     if (!newList.includes(draggedGroupCat)) newList.push(draggedGroupCat);
     if (!newList.includes(targetCat)) newList.push(targetCat);
-
-    const draggedIdx = newList.indexOf(draggedGroupCat);
-    const targetIdx = newList.indexOf(targetCat);
-
-    const [draggedItem] = newList.splice(draggedIdx, 1);
-    newList.splice(targetIdx, 0, draggedItem);
-
+    const fromIdx = newList.indexOf(draggedGroupCat);
+    const toIdx = newList.indexOf(targetCat);
+    const [moved] = newList.splice(fromIdx, 1);
+    newList.splice(toIdx, 0, moved);
     await updateDoc(getPublicDoc('settings', 'categories'), { list: newList });
     setDraggedGroupCat(null);
   };
-
   const renameGroup = async () => {
-    if (!editGroupOldName || !editGroupNewName.trim() || !user) return;
-    const oldName = editGroupOldName;
-    const newName = editGroupNewName.trim();
-    
-    let newList = appCategories.map(c => c === oldName ? newName : c);
-    if (!newList.includes(newName)) newList.push(newName);
-    newList = [...new Set(newList)];
-    await updateDoc(getPublicDoc('settings', 'categories'), { list: newList });
-
-    const groupItems = groupedHistory[oldName] || [];
-    for (const item of groupItems) {
-      await updateDoc(getPublicDoc('history', item.id), { category: newName });
-    }
-
-    setIsEditGroupModalOpen(false);
-    setShowActionsGroupCat(null);
+    if (!editGroupNewName.trim()) return;
+    const newList = appCategories.map(c => c === editGroupOldName ? editGroupNewName.trim() : c);
+    await updateDoc(getPublicDoc('settings', 'categories'), { list: [...new Set(newList)] });
+    const items = history.filter(h => h.projectId === currentProjectId && h.category === editGroupOldName);
+    for (const item of items) await updateDoc(getPublicDoc('history', item.id), { category: editGroupNewName.trim() });
+    setIsEditGroupModalOpen(false); setShowActionsGroupCat(null);
   };
-
-  const confirmDeleteGroup = (e, cat) => {
-     e.stopPropagation();
-     setDeleteGroupTarget(cat);
-     setIsDeleteGroupModalOpen(true);
-     setShowActionsGroupCat(null);
-  };
-
   const executeDeleteGroup = async () => {
-     if (!deleteGroupTarget || !user) return;
-     const groupItems = groupedHistory[deleteGroupTarget] || [];
-     for (const item of groupItems) {
-        await deleteDoc(getPublicDoc('history', item.id));
-     }
-     
-     let newList = appCategories.filter(c => c !== deleteGroupTarget);
-     await updateDoc(getPublicDoc('settings', 'categories'), { list: newList });
-
-     setIsDeleteGroupModalOpen(false);
-     setDeleteGroupTarget(null);
-     if (selectedFolder === deleteGroupTarget) setSelectedFolder(null);
+     const items = history.filter(h => h.projectId === currentProjectId && h.category === deleteGroupTarget);
+     for (const item of items) await deleteDoc(getPublicDoc('history', item.id));
+     await updateDoc(getPublicDoc('settings', 'categories'), { list: appCategories.filter(c => c !== deleteGroupTarget) });
+     setIsDeleteGroupModalOpen(false); setDeleteGroupTarget(null); if (selectedFolder === deleteGroupTarget) setSelectedFolder(null);
   };
 
   // --- Category & Component Management ---
   const saveCategory = async () => {
     if (!newCatName.trim() || !user) return;
-    const newList = [...appCategories, newCatName.trim()];
-    await updateDoc(getPublicDoc('settings', 'categories'), { list: newList });
+    await updateDoc(getPublicDoc('settings', 'categories'), { list: [...appCategories, newCatName.trim()] });
     setNewCatName('');
   };
-
   const deleteCategory = async (catToRemove) => {
-    if (!user || catToRemove === '미분류') return;
-    const newList = appCategories.filter(c => c !== catToRemove);
-    await updateDoc(getPublicDoc('settings', 'categories'), { list: newList });
+    if (catToRemove === '미분류') return;
+    await updateDoc(getPublicDoc('settings', 'categories'), { list: appCategories.filter(c => c !== catToRemove) });
   };
-
   const addComponentType = async () => {
     if(!newCompType.trim() || !user) return;
-    const newList = [...appComponents, { type: newCompType.trim(), cases: [] }];
-    await updateDoc(getPublicDoc('settings', 'components'), { list: newList });
+    await updateDoc(getPublicDoc('settings', 'components'), { list: [...appComponents, { type: newCompType.trim(), cases: [] }] });
     setNewCompType('');
   };
-  
   const deleteComponentType = async (type) => {
-    if(!user) return;
-    const newList = appComponents.filter(c => c.type !== type);
-    await updateDoc(getPublicDoc('settings', 'components'), { list: newList });
+    await updateDoc(getPublicDoc('settings', 'components'), { list: appComponents.filter(c => c.type !== type) });
   };
-
   const addTestCaseToComp = async (type) => {
     if(!newTestCase.trim() || !user) return;
-    const newList = appComponents.map(c => {
-       if (c.type === type) {
-          return { ...c, cases: [...c.cases, newTestCase.trim()] };
-       }
-       return c;
-    });
+    const newList = appComponents.map(c => c.type === type ? { ...c, cases: [...c.cases, newTestCase.trim()] } : c);
     await updateDoc(getPublicDoc('settings', 'components'), { list: newList });
     setNewTestCase('');
   };
-
   const deleteTestCaseFromComp = async (type, caseIndex) => {
-    if(!user) return;
-    const newList = appComponents.map(c => {
-       if (c.type === type) {
-          return { ...c, cases: c.cases.filter((_, idx) => idx !== caseIndex) };
-       }
-       return c;
-    });
+    const newList = appComponents.map(c => c.type === type ? { ...c, cases: c.cases.filter((_, idx) => idx !== caseIndex) } : c);
     await updateDoc(getPublicDoc('settings', 'components'), { list: newList });
   };
 
-  // --- Derived Values ---
+  // --- Derived Values & Safeguards ---
+  const isAnalyzing = currentProjectData?.isAnalyzing || false;
+  const activeScan = currentProjectData?.activeScan || null;
+  // 흰 화면의 주범 차단: 모든 렌더링 파트에서 사용하는 testObjects 배열 안전 참조
+  const safeTestObjects = activeScan?.testObjects || [];
+  
+  const projectHistory = history.filter(h => h.projectId === currentProjectId);
   const currentUserDisplayName = manualInfo.displayName || "사용자";
   const currentUserPhoto = manualInfo.photoURL || null;
 
@@ -1239,107 +818,47 @@ const App = () => {
   }, {});
 
   const displayGroups = Object.keys(groupedHistory).sort((a, b) => {
-     let idxA = appCategories.indexOf(a);
-     let idxB = appCategories.indexOf(b);
-     if (idxA === -1) idxA = 999;
-     if (idxB === -1) idxB = 999;
-     return idxA - idxB;
+     let idxA = appCategories.indexOf(a); let idxB = appCategories.indexOf(b);
+     return (idxA === -1 ? 999 : idxA) - (idxB === -1 ? 999 : idxB);
   });
 
-  // --- Render Sections ---
+  // --- Rendering UI Sections ---
   if (appState === 'intro') {
     return (
       <div className="min-h-screen bg-[#001529] flex flex-col items-center justify-center p-6 text-white font-sans">
         <style>{styleSheet}</style>
         <div className="relative mb-10">
           <div className="absolute inset-0 bg-blue-500 blur-3xl opacity-30 animate-pulse"></div>
-          <div className="bg-white/10 p-5 rounded-[2.5rem] border border-white/20 backdrop-blur-xl mb-6 shadow-2xl relative z-10">
-            <Building2 className="w-16 h-16 text-[#0066FF]" />
-          </div>
+          <div className="bg-white/10 p-5 rounded-[2.5rem] border border-white/20 backdrop-blur-xl mb-6 shadow-2xl relative z-10"><Building2 className="w-16 h-16 text-[#0066FF]" /></div>
         </div>
         <div className="text-center mb-12">
-          <h1 className="text-4xl font-black tracking-tight mb-3 italic">
-            <span className="text-[#0066FF] not-italic">APTNER</span> <span className="text-white opacity-90">QA PRO</span>
-          </h1>
+          <h1 className="text-4xl font-black tracking-tight mb-3 italic"><span className="text-[#0066FF] not-italic">APTNER</span> <span className="text-white opacity-90">QA PRO</span></h1>
           <p className="text-blue-300 font-bold tracking-[0.4em] text-[10px] uppercase">Collaborative UI Testing System</p>
         </div>
-        <div className="w-72 h-1.5 bg-white/5 rounded-full overflow-hidden mb-5 border border-white/10">
-          <div className="h-full bg-gradient-to-r from-[#0066FF] to-[#00CCFF] transition-all duration-300" style={{ width: `${introProgress}%` }} />
-        </div>
+        <div className="w-72 h-1.5 bg-white/5 rounded-full overflow-hidden mb-5 border border-white/10"><div className="h-full bg-gradient-to-r from-[#0066FF] to-[#00CCFF] transition-all duration-300" style={{ width: `${introProgress}%` }} /></div>
       </div>
     );
   }
 
   if (appState === 'login') {
     return (
-      <div className="min-h-screen bg-[#001529] flex flex-col items-center justify-center p-6 text-white overflow-hidden">
+      <div className="min-h-screen bg-[#001529] flex flex-col items-center justify-center p-6 text-white overflow-hidden font-sans">
         <style>{styleSheet}</style>
-        <div className="text-center mb-10">
-          <h1 className="text-3xl font-black tracking-tight mb-2">Workspace Access</h1>
-          <p className="text-blue-200/50 text-xs font-bold tracking-widest uppercase">팀 협업을 위한 계정 접속</p>
-        </div>
-        
-        <div className="w-full max-w-xs">
+        <div className="w-full max-w-xs space-y-6">
+          <h2 className="text-3xl font-black text-center mb-10 tracking-tight">Workspace Access</h2>
           <div className="flex bg-white/5 rounded-2xl p-1 mb-6 border border-white/10">
-            <button 
-              onClick={() => {setAuthMode('login'); setLoginErrorMsg('');}} 
-              className={`flex-1 py-3 text-xs font-black rounded-xl transition-all ${authMode === 'login' ? 'bg-[#0066FF] text-white shadow-lg shadow-blue-500/20' : 'text-white/40 hover:text-white'}`}
-            >
-              로그인
-            </button>
-            <button 
-              onClick={() => {setAuthMode('register'); setLoginErrorMsg('');}} 
-              className={`flex-1 py-3 text-xs font-black rounded-xl transition-all ${authMode === 'register' ? 'bg-[#0066FF] text-white shadow-lg shadow-blue-500/20' : 'text-white/40 hover:text-white'}`}
-            >
-              멤버 등록
-            </button>
+            <button onClick={() => setAuthMode('login')} className={`flex-1 py-3 text-xs font-black rounded-xl transition-all ${authMode === 'login' ? 'bg-[#0066FF] text-white shadow-lg' : 'text-white/40'}`}>로그인</button>
+            <button onClick={() => setAuthMode('register')} className={`flex-1 py-3 text-xs font-black rounded-xl transition-all ${authMode === 'register' ? 'bg-[#0066FF] text-white shadow-lg' : 'text-white/40'}`}>멤버 등록</button>
           </div>
-
           <div className="space-y-4">
-            <div className="space-y-1.5">
-              <label className="text-[10px] font-black text-blue-400 uppercase tracking-widest ml-1">Connect ID</label>
-              <input 
-                type="text" 
-                placeholder="영문 또는 숫자 입력" 
-                className="w-full px-5 py-3.5 bg-white/5 border border-white/10 rounded-xl outline-none focus:border-[#0066FF] focus:bg-[#0066FF]/10 focus:ring-4 focus:ring-[#0066FF]/30 transition-all duration-300 text-sm font-bold text-white placeholder-white/30" 
-                value={memberId} 
-                onChange={(e) => setMemberId(e.target.value)} 
-              />
-            </div>
-            <div className="space-y-1.5">
-              <label className="text-[10px] font-black text-blue-400 uppercase tracking-widest ml-1">Password</label>
-              <input 
-                type="password" 
-                placeholder="비밀번호 입력" 
-                className="w-full px-5 py-3.5 bg-white/5 border border-white/10 rounded-xl outline-none focus:border-[#0066FF] focus:bg-[#0066FF]/10 focus:ring-4 focus:ring-[#0066FF]/30 transition-all duration-300 text-sm font-bold text-white placeholder-white/30" 
-                value={memberPw} 
-                onChange={(e) => setMemberPw(e.target.value)} 
-                onKeyPress={(e) => e.key === 'Enter' && (authMode === 'login' ? handleCustomLogin() : handleCustomRegister())} 
-              />
-            </div>
-            {authMode === 'register' && (
-              <div className="space-y-1.5">
-                <label className="text-[10px] font-black text-blue-400 uppercase tracking-widest ml-1">Display Name</label>
-                <input 
-                  type="text" 
-                  placeholder="예: 홍길동" 
-                  className="w-full px-5 py-3.5 bg-white/5 border border-white/10 rounded-xl outline-none focus:border-[#0066FF] focus:bg-[#0066FF]/10 focus:ring-4 focus:ring-[#0066FF]/30 transition-all duration-300 text-sm font-bold text-white placeholder-white/30" 
-                  value={memberName} 
-                  onChange={(e) => setMemberName(e.target.value)} 
-                  onKeyPress={(e) => e.key === 'Enter' && handleCustomRegister()} 
-                />
-              </div>
-            )}
-            {loginErrorMsg && <p className="text-rose-400 text-center text-[11px] font-bold mt-2 animate-pulse">{loginErrorMsg}</p>}
-            <button 
-              onClick={authMode === 'login' ? handleCustomLogin : handleCustomRegister} 
-              disabled={isLoggingIn || !isAuthReady} 
-              className="w-full py-4 mt-4 bg-white text-[#001529] rounded-2xl font-black text-sm shadow-xl active:scale-95 disabled:opacity-80 transition-all flex items-center justify-center gap-2"
-            >
-              {(isLoggingIn || !isAuthReady) && <Loader2 className="w-5 h-5 animate-spin" />}
-              {authMode === 'login' ? '워크스페이스 접속' : '계정 등록 및 시작'}
-            </button>
+            <input type="text" placeholder="Connect ID" className="w-full px-5 py-3.5 bg-white/5 border border-white/10 rounded-xl outline-none focus:border-[#0066FF] text-white text-sm font-bold transition-all" value={memberId} onChange={e => setMemberId(e.target.value)} />
+            <input type="password" placeholder="Password" className="w-full px-5 py-3.5 bg-white/5 border border-white/10 rounded-xl outline-none focus:border-[#0066FF] text-white text-sm font-bold transition-all" value={memberPw} onChange={e => setMemberPw(e.target.value)} onKeyPress={e => e.key === 'Enter' && (authMode === 'login' ? handleCustomLogin() : handleCustomRegister())} />
+            {authMode === 'register' && <input type="text" placeholder="Display Name" className="w-full px-5 py-3.5 bg-white/5 border border-white/10 rounded-xl outline-none focus:border-[#0066FF] text-white text-sm font-bold transition-all" value={memberName} onChange={e => setMemberName(e.target.value)} onKeyPress={e => e.key === 'Enter' && handleCustomRegister()} />}
           </div>
+          {loginErrorMsg && <p className="text-rose-400 text-center text-xs font-bold animate-pulse">{loginErrorMsg}</p>}
+          <button onClick={authMode === 'login' ? handleCustomLogin : handleCustomRegister} disabled={isLoggingIn} className="w-full py-4 mt-4 bg-white text-[#001529] rounded-2xl font-black text-sm active:scale-95 flex items-center justify-center gap-2 shadow-xl transition-all">
+            {isLoggingIn && <Loader2 className="w-5 h-5 animate-spin" />} {authMode === 'login' ? '워크스페이스 접속' : '계정 등록 및 시작'}
+          </button>
         </div>
       </div>
     );
@@ -1347,29 +866,18 @@ const App = () => {
 
   if (appState === 'manualProfile') {
     return (
-      <div className="min-h-screen bg-[#001529] flex flex-col items-center justify-center p-6 text-white">
+      <div className="min-h-screen bg-[#001529] flex flex-col items-center justify-center p-6 text-white font-sans text-center">
         <style>{styleSheet}</style>
         <div className="max-w-xs w-full space-y-8">
-          <div className="text-center space-y-4">
-            <label className="cursor-pointer inline-block group relative">
-              <div className="w-24 h-24 bg-blue-500/20 rounded-[2rem] flex items-center justify-center mx-auto border border-blue-500/30 text-blue-400 overflow-hidden relative shadow-xl transition-all group-hover:border-blue-400">
-                {manualInfo.photoURL ? <img src={manualInfo.photoURL} alt="Profile" className="w-full h-full object-cover" /> : <Camera className="w-8 h-8" />}
-                <div className="absolute inset-0 bg-black/60 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"><span className="text-[10px] font-bold text-white uppercase tracking-widest">업로드</span></div>
-              </div>
-              <input type="file" accept="image/*" className="hidden" onChange={handleProfileImageUpload} />
-            </label>
-            <div>
-              <h2 className="text-2xl font-black italic">PROFILE <span className="text-[#0066FF] not-italic">PHOTO</span></h2>
-              <p className="text-blue-200/50 text-xs font-bold uppercase tracking-widest mt-1">{manualInfo.displayName}님, 프로필 사진을 등록하세요</p>
+          <label className="cursor-pointer inline-block group relative">
+            <div className="w-24 h-24 bg-blue-500/20 rounded-[2rem] border border-blue-500/30 flex items-center justify-center mx-auto overflow-hidden shadow-xl transition-all group-hover:border-blue-400">
+              {manualInfo.photoURL ? <img src={manualInfo.photoURL} alt="Profile" className="w-full h-full object-cover" /> : <Camera className="w-8 h-8 text-blue-400" />}
+              <div className="absolute inset-0 bg-black/60 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"><span className="text-[10px] font-bold text-white uppercase tracking-widest">업로드</span></div>
             </div>
-          </div>
-          
-          <button onClick={async () => {
-              if (manualInfo.memberId) await updateDoc(getPublicDoc('members', manualInfo.memberId), { photoURL: manualInfo.photoURL });
-              setAppState(prevAppState && prevAppState !== 'login' && prevAppState !== 'intro' ? prevAppState : 'projects'); 
-            }}
-            className="w-full py-4 bg-[#0066FF] text-white rounded-2xl font-black text-sm shadow-xl shadow-blue-500/20 hover:bg-blue-500 transition-all active:scale-95 flex items-center justify-center gap-2"
-          >
+            <input type="file" accept="image/*" className="hidden" onChange={handleProfileImageUpload} />
+          </label>
+          <div><h2 className="text-2xl font-black italic uppercase">Profile Photo</h2><p className="text-blue-200/50 text-xs font-bold uppercase tracking-widest mt-1">{manualInfo.displayName}님, 프로필 사진을 등록하세요</p></div>
+          <button onClick={async () => { if (manualInfo.memberId) await updateDoc(getPublicDoc('members', manualInfo.memberId), { photoURL: manualInfo.photoURL }); setAppState(prevAppState && prevAppState !== 'login' && prevAppState !== 'intro' ? prevAppState : 'projects'); }} className="w-full py-4 bg-[#0066FF] text-white rounded-2xl font-black text-sm active:scale-95 shadow-xl flex items-center justify-center gap-2 transition-all">
             {manualInfo.photoURL ? '설정 완료' : '사진 없이 입장'} <ChevronRight className="w-4 h-4" />
           </button>
         </div>
@@ -1379,7 +887,7 @@ const App = () => {
 
   if (appState === 'projects') {
     return (
-      <div className="min-h-screen bg-[#001224] text-white flex flex-col relative overflow-hidden">
+      <div className="min-h-screen bg-[#001224] text-white flex flex-col relative overflow-hidden font-sans">
         <style>{styleSheet}</style>
         <div className="relative z-10 flex flex-col min-h-screen p-8 md:p-16 max-w-[1400px] mx-auto w-full">
           <header className="mb-16 flex flex-col md:flex-row items-start md:items-center justify-between gap-8">
@@ -1387,64 +895,37 @@ const App = () => {
               <div className="inline-flex items-center gap-2 px-3 py-1 bg-white/5 border border-white/10 rounded-full"><Sparkles className="w-3 h-3 text-[#0066FF]" /><span className="text-[9px] font-black tracking-[0.2em] uppercase text-blue-300/80">Premium Workspace</span></div>
               <h1 className="text-5xl font-black tracking-tight text-white mb-2 italic uppercase">Team <span className="text-[#0066FF] not-italic">Boards</span></h1>
             </div>
-            
             <div className="flex items-center gap-4">
               <div className="relative">
-                <button 
-                  onClick={() => setIsUserMenuOpen(!isUserMenuOpen)} 
-                  style={{ animation: 'heartbeatGlow 2s ease-in-out infinite' }}
-                  className="w-9 h-9 rounded-full overflow-hidden border border-white/20 hover:border-[#0066FF] transition-all shrink-0 bg-slate-800 flex items-center justify-center"
-                >
+                <button onClick={() => setIsUserMenuOpen(!isUserMenuOpen)} style={{ animation: 'heartbeatGlow 2s ease-in-out infinite' }} className="w-9 h-9 rounded-full overflow-hidden border border-white/20 hover:border-[#0066FF] transition-all shrink-0 bg-slate-800 flex items-center justify-center">
                   {currentUserPhoto ? <img src={currentUserPhoto} alt="" className="w-full h-full object-cover" /> : <span className="font-bold text-xs text-white">{currentUserDisplayName?.[0]}</span>}
                 </button>
-                
                 {isUserMenuOpen && (
                   <div className="absolute right-0 mt-3 w-48 bg-[#001529]/95 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl py-2 z-50">
                     <div className="px-4 py-3 border-b border-white/10 flex flex-col items-start cursor-pointer hover:bg-white/5 transition-colors" onClick={() => { setIsUserMenuOpen(false); navigateToProfile(); }}>
-                      <span className="text-[8px] font-black text-blue-400 uppercase tracking-widest leading-none mb-1">ID: {manualInfo.memberId}</span>
-                      <span className="text-sm font-black tracking-tight text-white truncate w-full">{currentUserDisplayName}</span>
+                      <span className="text-[8px] font-black text-blue-400 uppercase tracking-widest leading-none mb-1">ID: {manualInfo.memberId}</span><span className="text-sm font-black tracking-tight text-white truncate w-full">{currentUserDisplayName}</span>
                     </div>
-                    <button onClick={() => { setIsUserMenuOpen(false); handleLogout(); }} className="w-full px-4 py-3 flex items-center justify-between text-white/50 hover:text-rose-400 hover:bg-rose-500/10 transition-all text-xs font-bold">
-                      로그아웃 <LogOut className="w-3.5 h-3.5" />
-                    </button>
+                    <button onClick={() => { setIsUserMenuOpen(false); handleLogout(); }} className="w-full px-4 py-3 flex items-center justify-between text-white/50 hover:text-rose-400 hover:bg-rose-500/10 transition-all text-xs font-bold">로그아웃 <LogOut className="w-3.5 h-3.5" /></button>
                   </div>
                 )}
               </div>
               <div className="flex items-center gap-2.5 bg-gradient-to-r from-white/10 to-transparent backdrop-blur-md border border-white/20 px-4 py-2 rounded-full shadow-[0_0_15px_rgba(0,102,255,0.2)]">
-                <div className="relative flex h-2.5 w-2.5">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                  <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
-                </div>
-                <span className="text-xs font-black tracking-widest uppercase text-white/90">{activeUsers?.length || 0} <span className="text-white/50">Online</span></span>
+                <span className="relative flex h-2.5 w-2.5"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span><span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span></span>
+                <span className="text-xs font-black tracking-widest uppercase text-white/90">{(activeUsers || []).length} Online</span>
               </div>
             </div>
           </header>
 
           <main className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8 md:gap-6">
             <div onClick={() => setIsNewProjectModalOpen(true)} className="group bg-white/5 hover:bg-white/10 border border-white/10 border-dashed rounded-[2rem] p-6 flex flex-col items-center justify-center min-h-[130px] transition-all cursor-pointer shadow-lg hover:border-[#0066FF]/50">
-              <div className="w-12 h-12 rounded-full bg-white/10 flex items-center justify-center group-hover:scale-110 group-hover:bg-[#0066FF] transition-all duration-300 shadow-lg">
-                <Plus className="w-6 h-6 text-white" />
-              </div>
+              <div className="w-12 h-12 rounded-full bg-white/10 flex items-center justify-center group-hover:scale-110 group-hover:bg-[#0066FF] transition-all duration-300 shadow-lg"><Plus className="w-6 h-6 text-white" /></div>
               <span className="mt-3 text-[10px] font-black uppercase tracking-widest text-white/50 group-hover:text-white transition-colors">Add Project</span>
             </div>
 
             {(projects || []).map(proj => {
               const projectMembers = (activeUsers || []).filter(u => u.currentProjectId === proj.id);
               return (
-                <div key={proj.id} 
-                  draggable={true}
-                  onDragStart={(e) => handleDragStart(e, proj.id)}
-                  onDragOver={(e) => handleDragOver(e, proj.id)}
-                  onDrop={(e) => handleDrop(e, proj.id)}
-                  onDragEnd={handleDragEnd}
-                  onPointerDown={(e) => { if (e.button === 2) return; handlePressStart(proj); }}
-                  onPointerUp={handlePressEnd}
-                  onPointerLeave={handlePressEnd}
-                  onPointerCancel={handlePressEnd}
-                  onClick={() => handleProjectClick(proj.id)}
-                  style={{ WebkitUserSelect: 'none', userSelect: 'none', WebkitTouchCallout: 'none' }}
-                  className={`group relative bg-gradient-to-br from-white/[0.07] to-white/[0.01] rounded-[2rem] p-6 border border-white/10 shadow-2xl transition-all cursor-pointer ${dragOverProjectId === proj.id ? 'border-[#0066FF] bg-white/[0.1] scale-105' : 'hover-cinematic-card'} ${draggedProjectId === proj.id ? 'opacity-50' : ''}`}
-                >
+                <div key={proj.id} draggable={true} onDragStart={(e) => handleDragStart(e, proj.id)} onDragOver={(e) => handleDragOver(e, proj.id)} onDrop={(e) => handleDrop(e, proj.id)} onDragEnd={handleDragEnd} onPointerDown={(e) => { if (e.button === 2) return; handlePressStart(proj.id); }} onPointerUp={handlePressEnd} onPointerLeave={handlePressEnd} onPointerCancel={handlePressEnd} onClick={() => handleProjectClick(proj.id)} style={{ WebkitUserSelect: 'none', userSelect: 'none', WebkitTouchCallout: 'none' }} className={`group relative bg-gradient-to-br from-white/[0.07] to-white/[0.01] rounded-[2rem] p-6 border border-white/10 shadow-2xl transition-all cursor-pointer ${dragOverProjectId === proj.id ? 'border-[#0066FF] bg-white/[0.1] scale-105' : 'hover-cinematic-card'} ${draggedProjectId === proj.id ? 'opacity-50' : ''}`}>
                   {showActionsProjId === proj.id && (
                     <div className="absolute top-4 right-4 flex items-center gap-2 z-20 animate-in fade-in zoom-in duration-200">
                       <button onClick={(e) => { e.stopPropagation(); setLongPressedProject(proj); setIsEditProjectName(true); setEditProjectNameVal(proj.name); setShowActionsProjId(null); }} className="p-2 bg-blue-500 hover:bg-blue-400 text-white rounded-full shadow-xl transition-all"><Edit2 className="w-3.5 h-3.5" /></button>
@@ -1461,16 +942,12 @@ const App = () => {
                     </div>
                     <div className="mt-4 pt-4 border-t border-white/5 flex items-center justify-between">
                       <div className="flex items-center gap-2.5">
-                        <div className="w-6 h-6 rounded-full overflow-hidden border border-white/20">
-                          {proj.createdByPhoto ? <img src={proj.createdByPhoto} alt="" className="w-full h-full object-cover" /> : <div className="bg-slate-700 w-full h-full flex items-center justify-center text-[10px] font-bold">{proj.createdByName?.[0]}</div>}
-                        </div>
+                        <div className="w-6 h-6 rounded-full overflow-hidden border border-white/20">{proj.createdByPhoto ? <img src={proj.createdByPhoto} alt="" className="w-full h-full object-cover" /> : <div className="bg-slate-700 w-full h-full flex items-center justify-center text-[10px] font-bold">{proj.createdByName?.[0]}</div>}</div>
                         <span className="text-xs font-bold text-white/40">{proj.createdByName || "익명"}</span>
                       </div>
                       <div className="flex -space-x-2">
                         {projectMembers.slice(0, 3).map((m, idx) => (
-                          <div key={idx} className="w-6 h-6 rounded-full bg-slate-800 border border-[#001224] flex items-center justify-center text-[8px] font-black overflow-hidden shadow-xl">
-                            {m.photoURL ? <img src={m.photoURL} alt="" className="w-full h-full object-cover" /> : m.displayName?.[0]}
-                          </div>
+                          <div key={idx} className="w-6 h-6 rounded-full bg-slate-800 border border-[#001224] flex items-center justify-center text-[8px] font-black overflow-hidden shadow-xl">{m.photoURL ? <img src={m.photoURL} alt="" className="w-full h-full object-cover" /> : m.displayName?.[0]}</div>
                         ))}
                       </div>
                     </div>
@@ -1480,17 +957,14 @@ const App = () => {
             })}
           </main>
 
-          {/* --- Project Action Modals --- */}
+          {/* --- Project Modals --- */}
           {isNewProjectModalOpen && (
             <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-[#001224]/80 backdrop-blur-md animate-in fade-in duration-300">
               <div className="bg-gradient-to-b from-[#001529] to-[#000b14] border border-white/10 w-full max-w-sm rounded-[2rem] shadow-[0_0_40px_rgba(0,102,255,0.15)] p-6 flex flex-col text-white relative overflow-hidden animate-in zoom-in-95 duration-300">
                 <div className="absolute inset-0 bg-blue-500/5 blur-3xl pointer-events-none"></div>
                 <div className="relative z-10">
                   <div className="flex items-center justify-between mb-6 border-b pb-4 border-white/10">
-                    <div>
-                      <h2 className="text-xl font-black uppercase tracking-tight text-white italic">New <span className="text-[#0066FF] not-italic">Project</span></h2>
-                      <p className="text-[9px] font-bold text-blue-300/50 uppercase tracking-widest mt-1">새로운 워크스페이스 생성</p>
-                    </div>
+                    <div><h2 className="text-xl font-black uppercase tracking-tight text-white italic">New <span className="text-[#0066FF] not-italic">Project</span></h2><p className="text-[9px] font-bold text-blue-300/50 uppercase tracking-widest mt-1">새로운 워크스페이스 생성</p></div>
                     <button onClick={() => { setIsNewProjectModalOpen(false); setNewProjectName(''); }} className="p-2 hover:bg-white/10 rounded-full text-white/40 hover:text-white transition-all"><X className="w-5 h-5" /></button>
                   </div>
                   <div className="space-y-4 mb-6">
@@ -1511,10 +985,7 @@ const App = () => {
                 <div className="absolute inset-0 bg-blue-500/5 blur-3xl pointer-events-none"></div>
                 <div className="relative z-10">
                   <div className="flex items-center justify-between mb-6 border-b pb-4 border-white/10">
-                    <div>
-                      <h2 className="text-xl font-black uppercase tracking-tight text-white italic">Edit <span className="text-[#0066FF] not-italic">Name</span></h2>
-                      <p className="text-[9px] font-bold text-blue-300/50 uppercase tracking-widest mt-1">프로젝트 이름 변경</p>
-                    </div>
+                    <div><h2 className="text-xl font-black uppercase tracking-tight text-white italic">Edit <span className="text-[#0066FF] not-italic">Name</span></h2><p className="text-[9px] font-bold text-blue-300/50 uppercase tracking-widest mt-1">프로젝트 이름 변경</p></div>
                     <button onClick={() => { setIsEditProjectName(false); setLongPressedProject(null); }} className="p-2 hover:bg-white/10 rounded-full text-white/40 hover:text-white transition-all"><X className="w-5 h-5" /></button>
                   </div>
                   <div className="space-y-4 mb-6">
@@ -1528,32 +999,16 @@ const App = () => {
               </div>
             </div>
           )}
-
-          {/* --- Close Project Confirm Modal --- */}
-          {isCloseProjectModalOpen && (
-            <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
-               <div className="bg-white w-full max-w-sm rounded-[2rem] shadow-2xl p-6 flex flex-col text-center">
-                  <div className="w-16 h-16 bg-rose-100 text-rose-500 rounded-full flex items-center justify-center mx-auto mb-4"><AlertOctagon className="w-8 h-8" /></div>
-                  <h2 className="text-xl font-black uppercase tracking-tight mb-2">Close Project?</h2>
-                  <p className="text-sm text-slate-500 font-bold mb-6">프로젝트를 종료하면 더 이상 수정하거나 스크린샷을 업로드할 수 없습니다. 계속하시겠습니까?</p>
-                  <div className="flex gap-3">
-                     <button onClick={() => setIsCloseProjectModalOpen(false)} className="flex-1 py-3 bg-slate-100 text-slate-600 rounded-xl font-black text-sm hover:bg-slate-200">CANCEL</button>
-                     <button onClick={handleCloseProject} className="flex-1 py-3 bg-rose-50 text-white rounded-xl font-black text-sm shadow-lg hover:bg-rose-600">YES, CLOSE IT</button>
-                  </div>
-               </div>
-            </div>
-          )}
         </div>
       </div>
     );
   }
 
-  // --- High Quality Project Transition Screen ---
+  // --- Transition Screen ---
   if (appState === 'projectLanding') {
     return (
-      <div className={`min-h-screen bg-[#001529] flex flex-col items-center justify-center p-6 text-white overflow-hidden relative ${isLandingExiting ? 'anim-particle-exit' : ''}`}>
+      <div className={`min-h-screen bg-[#001529] flex flex-col items-center justify-center p-6 text-white overflow-hidden relative font-sans ${isLandingExiting ? 'anim-particle-exit' : ''}`}>
         <style>{styleSheet}</style>
-        {isLandingExiting && <div className="cinematic-particles-overlay" />}
         <div className="absolute inset-0 bg-blue-500/5 blur-[120px] animate-pulse"></div>
         <div className="relative z-10 flex flex-col items-center text-center space-y-12 max-w-4xl w-full px-10 animate-[projectEntry_0.8s_ease-out]">
            <div className="w-24 h-24 bg-white/10 rounded-[2.5rem] border border-white/20 flex items-center justify-center shadow-2xl backdrop-blur-2xl mb-2"><Layers className="w-10 h-10 text-blue-400" /></div>
@@ -1577,7 +1032,7 @@ const App = () => {
     <div className={`min-h-screen bg-[#F8FAFC] text-slate-900 font-sans flex overflow-hidden ${isAuthorizedEntering ? 'anim-cinematic-enter' : ''}`}>
       <style>{styleSheet}</style>
 
-      {/* --- Category Management Modal --- */}
+      {/* 설정/모달 부분들 (전체 복구) */}
       {isCatModalOpen && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
           <div className="bg-white w-full max-w-sm rounded-[2rem] shadow-2xl p-6 flex flex-col">
@@ -1590,7 +1045,7 @@ const App = () => {
               <button onClick={saveCategory} className="px-4 py-2 bg-[#0066FF] text-white rounded-xl font-bold text-sm shadow hover:bg-blue-600 transition-colors">추가</button>
             </div>
             <div className="space-y-2 overflow-y-auto max-h-60">
-              {appCategories.map(cat => (
+              {(appCategories || []).map(cat => (
                 <div key={cat} className="flex items-center justify-between px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl">
                   <span className="text-sm font-bold">{cat}</span>
                   {cat !== '미분류' && <button onClick={() => deleteCategory(cat)} className="text-slate-400 hover:text-rose-500"><Trash2 className="w-4 h-4" /></button>}
@@ -1601,7 +1056,6 @@ const App = () => {
         </div>
       )}
 
-      {/* --- Component & Test Case Settings Modal --- */}
       {isCompModalOpen && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
           <div className="bg-white w-full max-w-lg rounded-[2rem] shadow-2xl p-6 flex flex-col max-h-[85vh]">
@@ -1609,11 +1063,10 @@ const App = () => {
               <h2 className="text-lg font-black uppercase tracking-tight">Component Test Cases</h2>
               <button onClick={() => { setIsCompModalOpen(false); setEditingCompType(null); }} className="p-2 hover:bg-slate-100 rounded-full"><X className="w-5 h-5" /></button>
             </div>
-            
             {!editingCompType ? (
               <>
                 <div className="flex gap-2 mb-4">
-                  <input type="text" placeholder="새 컴포넌트 추가 (예: Modal)" className="flex-1 px-4 py-2 border border-slate-200 rounded-xl text-sm font-bold outline-none focus:border-[#0066FF]" value={newCompType} onChange={(e) => setNewCompType(e.target.value)} onKeyPress={(e) => e.key === 'Enter' && addComponentType()} />
+                  <input type="text" placeholder="새 컴포넌트 추가" className="flex-1 px-4 py-2 border border-slate-200 rounded-xl text-sm font-bold outline-none focus:border-[#0066FF]" value={newCompType} onChange={(e) => setNewCompType(e.target.value)} onKeyPress={(e) => e.key === 'Enter' && addComponentType()} />
                   <button onClick={addComponentType} className="px-4 py-2 bg-[#001529] text-white rounded-xl font-bold text-sm shadow hover:bg-black transition-colors"><Plus className="w-4 h-4" /></button>
                 </div>
                 <div className="space-y-2 overflow-y-auto flex-1 pr-1">
@@ -1660,13 +1113,12 @@ const App = () => {
         </div>
       )}
 
-      {/* --- Close Project Confirm Modal --- */}
       {isCloseProjectModalOpen && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
            <div className="bg-white w-full max-w-sm rounded-[2rem] shadow-2xl p-6 flex flex-col text-center">
               <div className="w-16 h-16 bg-rose-100 text-rose-500 rounded-full flex items-center justify-center mx-auto mb-4"><AlertOctagon className="w-8 h-8" /></div>
               <h2 className="text-xl font-black uppercase tracking-tight mb-2">Close Project?</h2>
-              <p className="text-sm text-slate-500 font-bold mb-6">프로젝트를 종료하면 더 이상 수정하거나 스크린샷을 업로드할 수 없습니다. 계속하시겠습니까?</p>
+              <p className="text-sm text-slate-500 font-bold mb-6">프로젝트를 종료하면 더 이상 수정하거나 스크린샷을 업로드할 수 없습니다.</p>
               <div className="flex gap-3">
                  <button onClick={() => setIsCloseProjectModalOpen(false)} className="flex-1 py-3 bg-slate-100 text-slate-600 rounded-xl font-black text-sm hover:bg-slate-200">CANCEL</button>
                  <button onClick={handleCloseProject} className="flex-1 py-3 bg-rose-50 text-white rounded-xl font-black text-sm shadow-lg hover:bg-rose-600">YES, CLOSE IT</button>
@@ -1675,7 +1127,6 @@ const App = () => {
         </div>
       )}
 
-      {/* --- Edit Group Name Modal --- */}
       {isEditGroupModalOpen && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
           <div className="bg-white w-full max-w-sm rounded-[2rem] shadow-2xl p-6 flex flex-col text-slate-800">
@@ -1689,13 +1140,12 @@ const App = () => {
         </div>
       )}
 
-      {/* --- Delete Group Confirm Modal --- */}
       {isDeleteGroupModalOpen && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
            <div className="bg-white w-full max-w-sm rounded-[2rem] shadow-2xl p-6 flex flex-col text-center">
               <div className="w-16 h-16 bg-rose-100 text-rose-500 rounded-full flex items-center justify-center mx-auto mb-4"><AlertOctagon className="w-8 h-8" /></div>
               <h2 className="text-xl font-black uppercase tracking-tight mb-2">Delete Group?</h2>
-              <p className="text-sm text-slate-500 font-bold mb-6">[{deleteGroupTarget}] 그룹과 그룹에 포함된 <span className="text-rose-500 font-black">모든 레포트</span>가 삭제됩니다. 계속하시겠습니까?</p>
+              <p className="text-sm text-slate-500 font-bold mb-6">[{deleteGroupTarget}] 그룹과 <span className="text-rose-500 font-black">모든 레포트</span>가 삭제됩니다.</p>
               <div className="flex gap-3">
                  <button onClick={() => setIsDeleteGroupModalOpen(false)} className="flex-1 py-3 bg-slate-100 text-slate-600 rounded-xl font-black text-sm hover:bg-slate-200 transition-all">CANCEL</button>
                  <button onClick={executeDeleteGroup} className="flex-1 py-3 bg-rose-50 text-rose-600 rounded-xl font-black text-sm shadow-lg hover:bg-rose-500 hover:text-white transition-all">YES, DELETE</button>
@@ -1704,7 +1154,6 @@ const App = () => {
         </div>
       )}
 
-      {/* --- Saving Report Cinematic Overlay --- */}
       {isSavingReport && (
         <div className="fixed inset-0 z-[300] flex items-center justify-center bg-[#001529]/90 backdrop-blur-xl animate-in fade-in duration-500 overflow-hidden">
           <div className="relative flex flex-col items-center">
@@ -1714,24 +1163,14 @@ const App = () => {
               <Save className="w-10 h-10 text-blue-400 relative z-10 animate-bounce" />
             </div>
             <h2 className="text-2xl font-black uppercase tracking-[0.2em] text-white mb-2 italic">Saving <span className="text-blue-500 not-italic">Report</span></h2>
-            <p className="text-[10px] font-bold text-blue-300/60 uppercase tracking-widest animate-pulse">아카이브로 데이터를 안전하게 전송 중입니다...</p>
-            
-            <div className="mt-8 w-64 h-1 bg-white/10 rounded-full overflow-hidden relative">
-              <div className="h-full bg-gradient-to-r from-blue-600 to-cyan-400 animate-[lineGrow_2.5s_ease-in-out_infinite]" />
-            </div>
+            <p className="text-[10px] font-bold text-blue-300/60 uppercase tracking-widest animate-pulse">데이터를 안전하게 전송 중입니다...</p>
+            <div className="mt-8 w-64 h-1 bg-white/10 rounded-full overflow-hidden relative"><div className="h-full bg-gradient-to-r from-blue-600 to-cyan-400 animate-[lineGrow_2.5s_ease-in-out_infinite]" /></div>
           </div>
         </div>
       )}
 
-      {/* --- Archive Sidebar Backdrop --- */}
-      {isHistoryOpen && (
-        <div 
-          className="fixed inset-0 z-[45] bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-300"
-          onClick={() => setIsHistoryOpen(false)}
-        />
-      )}
-
-      {/* --- Archive Sidebar --- */}
+      {/* --- 아카이브 사이드바 --- */}
+      {isHistoryOpen && <div className="fixed inset-0 z-[45] bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-300" onClick={() => setIsHistoryOpen(false)} />}
       <aside className={`fixed inset-y-0 left-0 z-50 w-80 bg-[#001529] text-white transition-transform duration-500 transform ${isHistoryOpen ? 'translate-x-0' : '-translate-x-full'} shadow-2xl rounded-r-2xl`}>
         <div className="flex flex-col h-full p-6">
           <div className="flex items-center justify-between mb-8 pb-6 border-b border-white/10">
@@ -1751,16 +1190,7 @@ const App = () => {
 
                   return (
                   <div key={cat} 
-                       draggable={true}
-                       onDragStart={(e) => handleGroupDragStart(e, cat)}
-                       onDragOver={(e) => handleGroupDragOver(e, cat)}
-                       onDrop={(e) => handleGroupDrop(e, cat)}
-                       onDragEnd={handleGroupDragEnd}
-                       onPointerDown={(e) => { if (e.button === 2) return; handleGroupPressStart(cat); }}
-                       onPointerUp={handleGroupPressEnd}
-                       onPointerLeave={handleGroupPressEnd}
-                       onPointerCancel={handleGroupPressEnd}
-                       onClick={() => handleGroupClick(cat)}
+                       draggable={true} onDragStart={(e) => handleGroupDragStart(e, cat)} onDragOver={(e) => handleGroupDragOver(e, cat)} onDrop={(e) => handleGroupDrop(e, cat)} onDragEnd={handleGroupDragEnd} onPointerDown={(e) => { if (e.button === 2) return; handleGroupPressStart(cat); }} onPointerUp={handleGroupPressEnd} onPointerLeave={handleGroupPressEnd} onPointerCancel={handleGroupPressEnd} onClick={() => handleGroupClick(cat)}
                        style={{ WebkitUserSelect: 'none', userSelect: 'none', WebkitTouchCallout: 'none' }}
                        className={`group p-4 bg-gradient-to-br from-white/[0.08] to-transparent border border-white/10 rounded-2xl cursor-pointer transition-all flex items-center gap-4 relative ${dragOverGroupCat === cat ? 'border-[#0066FF] bg-white/[0.1] scale-105' : 'hover:bg-[#0066FF]/20 hover:border-[#0066FF]/50 shadow-lg'} ${draggedGroupCat === cat ? 'opacity-50' : ''}`}
                   >
@@ -1791,7 +1221,7 @@ const App = () => {
         </div>
       </aside>
 
-      {/* --- Folder Contents Popup (Modal Overlay Style) --- */}
+      {/* --- 폴더 아카이브 팝업 --- */}
       {selectedFolder && (
         <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 md:p-8 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-300">
            <div className="bg-white w-full max-w-[90vw] md:max-w-7xl rounded-[2.5rem] shadow-[0_32px_64px_-12px_rgba(0,0,0,0.4)] flex flex-col h-[85vh] overflow-hidden border border-slate-200 animate-in zoom-in-95 duration-300">
@@ -1806,26 +1236,11 @@ const App = () => {
                  <button onClick={() => setSelectedFolder(null)} className="p-2 hover:bg-slate-100 text-slate-400 rounded-full transition-colors"><X className="w-5 h-5" /></button>
               </div>
               <div className="flex-1 overflow-y-auto p-6 md:p-8 bg-slate-200/90 relative">
-                 <style>{`
-                   .hover-soft-glow:hover {
-                     animation: heartbeatGlow 1.5s ease-in-out infinite;
-                     transform: translateY(-4px);
-                     z-index: 20;
-                   }
-                 `}</style>
+                 <style>{` .hover-soft-glow:hover { animation: heartbeatGlow 1.5s ease-in-out infinite; transform: translateY(-4px); z-index: 20; } `}</style>
                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-4">
                     {(groupedHistory[selectedFolder] || []).map(item => (
                        <div key={item.id} 
-                            draggable={true}
-                            onDragStart={(e) => handleHistoryDragStart(e, item.id)}
-                            onDragOver={(e) => handleHistoryDragOver(e, item.id)}
-                            onDrop={(e) => handleHistoryDrop(e, item.id)}
-                            onDragEnd={handleHistoryDragEnd}
-                            onPointerDown={(e) => { if (e.button === 2) return; handleHistoryPressStart(item); }}
-                            onPointerUp={(e) => handleHistoryPressEnd(e)}
-                            onPointerLeave={(e) => handleHistoryPressEnd(e)}
-                            onPointerCancel={(e) => handleHistoryPressEnd(e)}
-                            onClick={() => handleHistoryClick(item)}
+                            draggable={true} onDragStart={(e) => handleHistoryDragStart(e, item.id)} onDragOver={(e) => handleHistoryDragOver(e, item.id)} onDrop={(e) => handleHistoryDrop(e, item.id)} onDragEnd={handleHistoryDragEnd} onPointerDown={(e) => { if (e.button === 2) return; handleHistoryPressStart(item.id); }} onPointerUp={handleHistoryPressEnd} onPointerLeave={handleHistoryPressEnd} onPointerCancel={handleHistoryPressEnd} onClick={() => handleHistoryClick(item)}
                             style={{ WebkitUserSelect: 'none', userSelect: 'none', WebkitTouchCallout: 'none' }}
                             className={`group p-4 bg-white rounded-2xl shadow-sm border border-transparent transition-all cursor-pointer flex flex-col items-center justify-center relative ${dragOverHistoryId === item.id ? 'border-[#0066FF] bg-blue-50 scale-105' : 'hover-soft-glow'} ${draggedHistoryId === item.id ? 'opacity-50' : ''}`}
                        >
@@ -1849,7 +1264,7 @@ const App = () => {
         </div>
       )}
 
-      {/* --- History View Modal --- */}
+      {/* --- History View Detail Modal --- */}
       {selectedHistoryItem && (
         <div className="fixed inset-0 z-[120] flex items-center justify-center p-8 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-300">
            <div className="relative w-full max-w-5xl bg-white rounded-[2.5rem] shadow-2xl overflow-hidden flex flex-col max-h-[90vh] animate-in zoom-in-95 duration-300">
@@ -1871,12 +1286,12 @@ const App = () => {
               <div className="px-8 py-4 bg-white border-b">
                  <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-widest text-slate-500 mb-2">
                     <span>Overall Progress</span>
-                    <span>{Math.round(((selectedHistoryItem.stats?.pass || 0) / (selectedHistoryItem.stats?.total || 1)) * 100)}% PASS</span>
+                    <span>{Math.round(((selectedHistoryItem.stats?.pass || 0) / Math.max((selectedHistoryItem.stats?.total || 1), 1)) * 100)}% PASS</span>
                  </div>
                  <div className="w-full h-2.5 bg-slate-100 rounded-full overflow-hidden flex">
-                    <div style={{ width: `${((selectedHistoryItem.stats?.pass || 0)/(selectedHistoryItem.stats?.total || 1))*100}%` }} className="bg-emerald-500 transition-all h-full" />
-                    <div style={{ width: `${((selectedHistoryItem.stats?.fail || 0)/(selectedHistoryItem.stats?.total || 1))*100}%` }} className="bg-rose-500 transition-all h-full" />
-                    <div style={{ width: `${((selectedHistoryItem.stats?.pending || 0)/(selectedHistoryItem.stats?.total || 1))*100}%` }} className="bg-slate-300 transition-all h-full" />
+                    <div style={{ width: `${((selectedHistoryItem.stats?.pass || 0)/Math.max((selectedHistoryItem.stats?.total || 1), 1))*100}%` }} className="bg-emerald-500 transition-all h-full" />
+                    <div style={{ width: `${((selectedHistoryItem.stats?.fail || 0)/Math.max((selectedHistoryItem.stats?.total || 1), 1))*100}%` }} className="bg-rose-500 transition-all h-full" />
+                    <div style={{ width: `${((selectedHistoryItem.stats?.pending || 0)/Math.max((selectedHistoryItem.stats?.total || 1), 1))*100}%` }} className="bg-slate-300 transition-all h-full" />
                  </div>
                  <div className="flex items-center gap-4 text-[10px] font-bold text-slate-400 mt-2">
                     <span className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-emerald-500"/> PASS ({selectedHistoryItem.stats?.pass || 0})</span>
@@ -1948,7 +1363,6 @@ const App = () => {
             </div>
             
             <div className="flex items-center gap-3">
-              {/* --- Close Project Button (Only for Creator) --- */}
               {!isProjectClosed && (currentProjectData?.createdBy === manualInfo.memberId || currentProjectData?.createdBy === user?.uid) && (
                 <button onClick={() => setIsCloseProjectModalOpen(true)} className="px-5 py-3 bg-rose-50 text-rose-500 border border-rose-200 rounded-xl shadow-sm font-black text-xs uppercase tracking-widest hover:bg-rose-500 hover:text-white transition-all">CLOSE PROJECT</button>
               )}
@@ -2102,7 +1516,7 @@ const App = () => {
                         <h3 className="text-lg font-black text-slate-700 tracking-tight mb-2">AI 분석 진행 중</h3>
                         <p className="text-xs text-slate-500 font-bold">화면의 UI 컴포넌트를 식별하고 있습니다...</p>
                     </div>
-                  ) : (testObjects || []).length === 0 ? (
+                  ) : safeTestObjects.length === 0 ? (
                     <div className="h-full min-h-[300px] flex flex-col items-center justify-center py-24 text-slate-200"><Layout className="w-20 h-20 mb-4 opacity-20" /><p className="font-black uppercase tracking-widest text-[10px]">No Data Captured</p></div>
                   ) : (
                     <div className="space-y-4 pb-12">
@@ -2110,14 +1524,14 @@ const App = () => {
                       <div className="mb-6 space-y-2">
                         <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-widest text-slate-500">
                           <span>Overall Progress</span>
-                          <span>{Math.round((testObjects.filter(o => o.status === 'PASS').length / Math.max(testObjects.length, 1)) * 100) || 0}% PASS</span>
+                          <span>{Math.round((safeTestObjects.filter(o => o.status === 'PASS').length / Math.max(safeTestObjects.length, 1)) * 100) || 0}% PASS</span>
                         </div>
                         <div className="w-full h-2.5 bg-slate-100 rounded-full overflow-hidden flex">
                           {(() => {
-                            const total = Math.max(testObjects.length, 1);
-                            const pass = testObjects.filter(o => o.status === 'PASS').length;
-                            const fail = testObjects.filter(o => o.status === 'FAIL').length;
-                            const pending = testObjects.filter(o => o.status === 'PENDING').length;
+                            const total = Math.max(safeTestObjects.length, 1);
+                            const pass = safeTestObjects.filter(o => o.status === 'PASS').length;
+                            const fail = safeTestObjects.filter(o => o.status === 'FAIL').length;
+                            const pending = safeTestObjects.filter(o => o.status === 'PENDING').length;
                             return (
                               <>
                                 <div style={{ width: `${(pass/total)*100}%` }} className="bg-emerald-500 transition-all h-full" />
@@ -2128,13 +1542,13 @@ const App = () => {
                           })()}
                         </div>
                         <div className="flex items-center gap-4 text-[10px] font-bold text-slate-400">
-                           <span className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-emerald-500"/> PASS ({testObjects.filter(o => o.status === 'PASS').length})</span>
-                           <span className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-rose-500"/> FAIL ({testObjects.filter(o => o.status === 'FAIL').length})</span>
-                           <span className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-slate-300"/> PENDING ({testObjects.filter(o => o.status === 'PENDING').length})</span>
+                           <span className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-emerald-500"/> PASS ({safeTestObjects.filter(o => o.status === 'PASS').length})</span>
+                           <span className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-rose-500"/> FAIL ({safeTestObjects.filter(o => o.status === 'FAIL').length})</span>
+                           <span className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-slate-300"/> PENDING ({safeTestObjects.filter(o => o.status === 'PENDING').length})</span>
                         </div>
                       </div>
 
-                      {testObjects.map(obj => {
+                      {safeTestObjects.map(obj => {
                         // --- Edit Mode Rendering ---
                         if (editingObjId === obj.id) {
                            return (
@@ -2187,7 +1601,7 @@ const App = () => {
 
                              {expandedObjId === obj.id && (
                                 <div className="w-full mt-4 pt-4 border-t border-slate-200/60 space-y-2 cursor-default" onClick={e => e.stopPropagation()}>
-                                    {obj.testCases && obj.testCases.length > 0 ? obj.testCases.map(tc => {
+                                    {(obj.testCases || []).length > 0 ? (obj.testCases || []).map(tc => {
                                        if (editingTestCaseId === tc.id) {
                                           return (
                                              <div key={tc.id} className="flex items-center justify-between p-3 bg-white/60 rounded-xl border border-slate-100 shadow-sm gap-2">
