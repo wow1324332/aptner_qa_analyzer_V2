@@ -340,7 +340,7 @@ const App = () => {
           const data = doc.data();
           if (Date.now() - data.lastSeen < 300000) usersList.push(data);
         });
-        setActiveUsers(usersList);
+        setActiveUsers(list => JSON.stringify(list) === JSON.stringify(usersList) ? list : usersList);
       });
 
       return () => {
@@ -629,7 +629,7 @@ const App = () => {
 
   const isProjectClosed = currentProjectData?.status === 'CLOSED';
 
-  // --- Editor Core Actions (AI 분석 로직) 수정본 ---
+  // --- Editor Core Actions (AI 분석 로직 - 최신 모델 고정 수정) ---
   const analyzeScreenshot = async (base64Data, imageSrc) => {
     if (!base64Data || !currentProjectId || !user || isProjectClosed) return;
     const projectRef = getPublicDoc('projects', currentProjectId);
@@ -649,11 +649,10 @@ const App = () => {
 
     const callApi = async (attempt = 0) => {
       try {
-        // [수정된 부분] 캔버스와 외부(Vercel) 환경의 API 호출 URL을 완벽하게 분리합니다.
-        // Vercel에서는 안정적인 v1 버전과 정식 gemini-1.5-flash 모델을 사용합니다.
+        // [수정] 외부 배포 환경(Vercel)에서는 확실하게 gemini-2.0-flash 모델과 v1 엔드포인트를 사용하도록 분기 처리
         const apiUrl = isCanvas 
           ? `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`
-          : `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+          : `https://generativelanguage.googleapis.com/v1/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
 
         const response = await fetch(apiUrl, {
           method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
@@ -661,8 +660,7 @@ const App = () => {
         
         if (!response.ok) {
           const errorData = await response.json();
-          const errorMsg = errorData.error?.message || `HTTP 에러 ${response.status}`;
-          throw new Error(errorMsg);
+          throw new Error(errorData.error?.message || `HTTP 에러 ${response.status}`);
         }
         
         const data = await response.json();
@@ -692,10 +690,9 @@ const App = () => {
       const results = await callApi();
       await updateDoc(projectRef, { 'activeScan.testObjects': results, isAnalyzing: false });
     } catch (err) {
-      console.error("AI Analysis Error:", err);
       let korError = err.message;
-      if (err.message.includes('API key not valid')) korError = "API 키가 올바르지 않거나 잘못 입력되었습니다. Vercel 환경 변수를 다시 확인하세요.";
-      else if (err.message.includes('not found') || err.message.includes('404')) korError = "해당 AI 모델에 접근할 수 없습니다. 새 프로젝트에서 발급받은 키인지 확인하세요.";
+      if (err.message.includes('API key not valid')) korError = "API 키가 올바르지 않거나 잘못 입력되었습니다.";
+      else if (err.message.includes('not found') || err.message.includes('404')) korError = "해당 AI 모델에 접근할 수 없습니다. 모델명을 다시 확인하세요.";
       
       await updateDoc(projectRef, { 
         isAnalyzing: false,
@@ -1214,7 +1211,6 @@ const App = () => {
   const currentUserDisplayName = manualInfo.displayName || "사용자";
   const currentUserPhoto = manualInfo.photoURL || null;
 
-  // --- Group History by Category ---
   const groupedHistory = projectHistory.reduce((acc, item) => {
     const cat = item.category || '미분류';
     if (!acc[cat]) acc[cat] = [];
