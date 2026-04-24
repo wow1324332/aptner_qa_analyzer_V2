@@ -649,9 +649,8 @@ const App = () => {
 
     const callApi = async (attempt = 0) => {
       try {
-        // [수정 핵심] 404와 400 에러를 해결하기 위해 사용자 목록에 있는 모델 중 정식 버전인 v1beta 엔드포인트와 2.0 모델을 최우선 사용합니다.
-        // gemini-2.0-flash-001은 가장 안정적인 최신 모델입니다.
-        const aiModel = isCanvas ? 'gemini-2.5-flash-preview-09-2025' : 'gemini-2.0-flash-001';
+        // [핵심 수정] Vercel 배포 시 404, 400 에러를 방지하기 위해 gemini-2.0-flash 모델과 v1beta 엔드포인트 사용
+        const aiModel = isCanvas ? 'gemini-2.5-flash-preview-09-2025' : 'gemini-2.0-flash';
         const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${aiModel}:generateContent?key=${apiKey}`;
 
         const response = await fetch(apiUrl, {
@@ -660,22 +659,16 @@ const App = () => {
         
         if (!response.ok) {
           const errorData = await response.json();
-          const korMsg = errorData.error?.message || "알 수 없는 API 에러";
-          // 만약 특정 모델이 404라면 다른 모델로 한 번 더 시도
-          if (response.status === 404 && !isCanvas) {
-             const fallbackUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
-             const fbRes = await fetch(fallbackUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-             if (fbRes.ok) {
-                const fbData = await fbRes.json();
-                return JSON.parse(fbData.candidates?.[0]?.content?.parts?.[0]?.text);
-             }
-          }
-          throw new Error(korMsg);
+          const errorMsg = errorData.error?.message || `HTTP 에러 ${response.status}`;
+          throw new Error(errorMsg);
         }
         
         const data = await response.json();
-        const textResult = data.candidates?.[0]?.content?.parts?.[0]?.text;
-        const parsed = JSON.parse(textResult.replace(/```json|```/g, ""));
+        
+        // [추가 안정화] 마크다운 백틱(```json)이 포함된 경우를 안전하게 제거 후 파싱
+        const textContent = data.candidates?.[0]?.content?.parts?.[0]?.text || "{}";
+        const cleanText = textContent.replace(/```json/g, '').replace(/```/g, '').trim();
+        const parsed = JSON.parse(cleanText);
         
         const componentMap = appComponents.reduce((acc, curr) => {
            acc[curr.type] = curr.cases;
@@ -703,8 +696,8 @@ const App = () => {
     } catch (err) {
       console.error("AI Analysis Error:", err);
       let korError = err.message;
-      if (err.message.includes('API key not valid')) korError = "API 키가 올바르지 않습니다.";
-      else if (err.message.includes('not found') || err.message.includes('404')) korError = "해당 AI 모델을 찾을 수 없습니다. (2.0-flash-001 확인 필요)";
+      if (err.message.includes('API key not valid')) korError = "API 키가 올바르지 않거나 잘못 입력되었습니다. Vercel 환경 변수를 다시 확인하세요.";
+      else if (err.message.includes('not found') || err.message.includes('404')) korError = "해당 AI 모델에 접근할 수 없습니다. 새 프로젝트에서 발급받은 키인지 확인하세요.";
       
       await updateDoc(projectRef, { 
         isAnalyzing: false,
