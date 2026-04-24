@@ -8,7 +8,7 @@ import {
 
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged, signOut, signInWithCustomToken } from 'firebase/auth';
-import { getFirestore, collection, doc, setDoc, onSnapshot, addDoc, updateDoc, deleteDoc, getDoc } from 'firebase/firestore';
+import { initializeFirestore, collection, doc, setDoc, onSnapshot, addDoc, updateDoc, deleteDoc, getDoc } from 'firebase/firestore';
 
 // --- 캔버스와 외부 배포(Vercel) 환경을 모두 지원하는 하이브리드 설정 ---
 const getEnv = (key) => {
@@ -43,7 +43,9 @@ const firebaseConfig = isCanvas ? JSON.parse(__firebase_config) : {
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
-const db = getFirestore(app);
+const db = initializeFirestore(app, {
+  experimentalForceLongPolling: true
+});
 
 // 캔버스는 복잡한 경로를, 외부 배포는 깔끔한 Root 경로를 자동으로 사용합니다.
 const getPublicCollection = (colName) => 
