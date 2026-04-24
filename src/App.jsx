@@ -32,14 +32,20 @@ const canvasAppId = typeof __app_id !== 'undefined' ? String(__app_id).replace(/
 
 const apiKey = isCanvas ? "" : (getEnv('GEMINI') || "");
 
-const firebaseConfig = isCanvas ? JSON.parse(__firebase_config) : {
-  apiKey: getEnv('FB_API') || "dummy-key",
-  authDomain: getEnv('FB_DOMAIN') || "dummy",
-  projectId: getEnv('FB_PROJECT') || "dummy",
-  storageBucket: getEnv('FB_BUCKET') || "dummy",
-  messagingSenderId: getEnv('FB_SENDER') || "dummy",
-  appId: getEnv('FB_APP_ID') || "dummy"
-};
+// 흰 화면 방지: Firebase 설정 파싱 중 에러가 나도 앱이 죽지 않도록 방어 코드 추가
+let firebaseConfig;
+try {
+  firebaseConfig = isCanvas ? JSON.parse(__firebase_config) : {
+    apiKey: getEnv('FB_API') || "dummy-key",
+    authDomain: getEnv('FB_DOMAIN') || "dummy",
+    projectId: getEnv('FB_PROJECT') || "dummy",
+    storageBucket: getEnv('FB_BUCKET') || "dummy",
+    messagingSenderId: getEnv('FB_SENDER') || "dummy",
+    appId: getEnv('FB_APP_ID') || "dummy"
+  };
+} catch (e) {
+  firebaseConfig = { apiKey: "error" };
+}
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -53,7 +59,7 @@ const getPublicCollection = (colName) =>
 const getPublicDoc = (colName, docId) => 
   isCanvas ? doc(db, 'artifacts', canvasAppId, 'public', 'data', colName, docId) : doc(db, colName, docId);
 
-// --- Inject Custom CSS Keyframes (원본 디자인 및 시네마틱 효과 유지) ---
+// --- Inject Custom CSS Keyframes (원본 시네마틱 효과 유지) ---
 const styleSheet = `
 @keyframes smoothScan {
   0% { transform: translateY(-100%); opacity: 0; }
@@ -341,7 +347,7 @@ const App = () => {
           if (Date.now() - data.lastSeen < 300000) usersList.push(data);
         });
         setActiveUsers(list => JSON.stringify(list) === JSON.stringify(usersList) ? list : usersList);
-      });
+      }, (err) => console.error(err));
 
       return () => {
         clearInterval(interval);
@@ -363,7 +369,7 @@ const App = () => {
       } else {
         setDoc(catRef, { list: ['미분류', '홈화면', '결제', '등록', '커뮤니티'] });
       }
-    });
+    }, (err) => console.error(err));
 
     // Components & Test Cases
     const compRef = getPublicDoc('settings', 'components');
@@ -385,7 +391,7 @@ const App = () => {
         ];
         setDoc(compRef, { list: defaultList });
       }
-    });
+    }, (err) => console.error(err));
 
     return () => { unsubCat(); unsubComp(); };
   }, [isAuthReady, user]);
@@ -421,7 +427,7 @@ const App = () => {
         setCurrentProjectData(null);
         setAppState('projects');
       }
-    });
+    }, (err) => console.error(err));
     return () => unsubProject();
   }, [isAuthReady, user, currentProjectId]);
 
@@ -629,7 +635,7 @@ const App = () => {
 
   const isProjectClosed = currentProjectData?.status === 'CLOSED';
 
-  // --- Editor Core Actions (AI 분석 로직 - 404/400 오류 해결 완료) ---
+  // --- Editor Core Actions (AI 분석 로직) ---
   const analyzeScreenshot = async (base64Data, imageSrc) => {
     if (!base64Data || !currentProjectId || !user || isProjectClosed) return;
     const projectRef = getPublicDoc('projects', currentProjectId);
@@ -743,7 +749,7 @@ const App = () => {
     
     const updatedObjects = currentProjectData.activeScan.testObjects.map(obj => {
       if (obj.id === objId) {
-         const updatedCases = obj.testCases.map(tc => tc.id === tcId ? { ...tc, status: newStatus } : tc);
+         const updatedCases = (obj.testCases || []).map(tc => tc.id === tcId ? { ...tc, status: newStatus } : tc);
          
          const isFail = updatedCases.some(tc => tc.status === 'FAIL');
          const isPending = updatedCases.some(tc => tc.status === 'PENDING');
@@ -811,7 +817,7 @@ const App = () => {
       testCases: tcArray
     };
     
-    const updatedObjects = [...currentProjectData.activeScan.testObjects, newObj];
+    const updatedObjects = [...(currentProjectData.activeScan.testObjects || []), newObj];
     await updateActiveScanField('testObjects', updatedObjects);
     setIsAddingObj(false);
     setAddObjForm({ label: '', description: '', type: objectTypes[0] || 'Button' });
@@ -852,7 +858,7 @@ const App = () => {
 
     const updatedObjects = currentProjectData.activeScan.testObjects.map(obj => {
       if (obj.id === objId) {
-        const updatedCases = obj.testCases.map(tc => tc.id === editingTestCaseId ? { ...tc, label: editingTestCaseLabel.trim() } : tc);
+        const updatedCases = (obj.testCases || []).map(tc => tc.id === editingTestCaseId ? { ...tc, label: editingTestCaseLabel.trim() } : tc);
         return { ...obj, testCases: updatedCases };
       }
       return obj;
@@ -867,7 +873,7 @@ const App = () => {
 
     const updatedObjects = currentProjectData.activeScan.testObjects.map(obj => {
       if (obj.id === objId) {
-        const updatedCases = obj.testCases.filter(tc => tc.id !== tcId);
+        const updatedCases = (obj.testCases || []).filter(tc => tc.id !== tcId);
 
         const isFail = updatedCases.some(tc => tc.status === 'FAIL');
         const isPending = updatedCases.some(tc => tc.status === 'PENDING');
@@ -885,16 +891,17 @@ const App = () => {
 
   const saveCurrentToHistory = async () => {
     const scan = currentProjectData?.activeScan;
-    if (!scan || !scan.image || scan.testObjects.length === 0 || !user || !currentProjectId || isProjectClosed) return;
+    if (!scan || !scan.image || (scan.testObjects || []).length === 0 || !user || !currentProjectId || isProjectClosed) return;
     
     setIsSavingReport(true);
     
     try {
+      const testObjects = scan.testObjects || [];
       const stats = {
-        total: scan.testObjects.length,
-        pass: scan.testObjects.filter(o => o.status === 'PASS').length,
-        fail: scan.testObjects.filter(o => o.status === 'FAIL').length,
-        pending: scan.testObjects.filter(o => o.status === 'PENDING').length
+        total: testObjects.length,
+        pass: testObjects.filter(o => o.status === 'PASS').length,
+        fail: testObjects.filter(o => o.status === 'FAIL').length,
+        pending: testObjects.filter(o => o.status === 'PENDING').length
       };
       
       const minDelay = new Promise(resolve => setTimeout(resolve, 2500));
@@ -904,7 +911,7 @@ const App = () => {
           projectId: currentProjectId, createdAt: Date.now(), order: Date.now(), timestamp: new Date().toLocaleString(),
           title: scanMetaForm.title || scan.title || "제목 없는 리포트", description: scan.description || "설명이 없습니다.",
           category: scanMetaForm.category || scan.category || appCategories[0] || '미분류', image: scan.image, base64Image: scan.base64Image,
-          testObjects: [...scan.testObjects], stats,
+          testObjects: [...testObjects], stats,
           savedBy: manualInfo.memberId || user.uid, savedByName: manualInfo.displayName || "GUEST", savedByPhoto: manualInfo.photoURL || null
         });
       };
@@ -924,7 +931,7 @@ const App = () => {
     if (!currentProjectId || !user || isProjectClosed) return;
     await updateDoc(getPublicDoc('projects', currentProjectId), {
       status: 'IN PROGRESS',
-      activeScan: { image: item.image, base64Image: item.base64Image, title: item.title, description: item.description, category: item.category, testObjects: [...item.testObjects] }
+      activeScan: { image: item.image, base64Image: item.base64Image, title: item.title, description: item.description, category: item.category, testObjects: [...(item.testObjects || [])] }
     });
     setSelectedHistoryItem(null); 
     setSelectedFolder(null);
@@ -1010,7 +1017,7 @@ const App = () => {
   // --- History Direct Edit Handlers ---
   const toggleHistoryObjStatus = (objId) => {
      if (!selectedHistoryItem || isProjectClosed) return;
-     const updatedObjects = selectedHistoryItem.testObjects.map(obj => {
+     const updatedObjects = (selectedHistoryItem.testObjects || []).map(obj => {
         if (obj.id === objId) {
            const currentStatus = obj.status;
            const nextStatus = currentStatus === 'PENDING' ? 'PASS' : (currentStatus === 'PASS' ? 'FAIL' : 'PENDING');
@@ -1029,9 +1036,9 @@ const App = () => {
 
   const toggleHistoryTCStatus = (objId, tcId, newStatus) => {
      if (!selectedHistoryItem || isProjectClosed) return;
-     const updatedObjects = selectedHistoryItem.testObjects.map(obj => {
+     const updatedObjects = (selectedHistoryItem.testObjects || []).map(obj => {
         if (obj.id === objId) {
-           const updatedCases = obj.testCases.map(tc => tc.id === tcId ? { ...tc, status: newStatus } : tc);
+           const updatedCases = (obj.testCases || []).map(tc => tc.id === tcId ? { ...tc, status: newStatus } : tc);
            const isFail = updatedCases.some(tc => tc.status === 'FAIL');
            const isPending = updatedCases.some(tc => tc.status === 'PENDING');
            let parentStatus = 'PENDING';
@@ -1053,7 +1060,7 @@ const App = () => {
   const saveHistoryChanges = async () => {
      if (!selectedHistoryItem || isProjectClosed) return;
      await updateDoc(getPublicDoc('history', selectedHistoryItem.id), {
-        testObjects: selectedHistoryItem.testObjects,
+        testObjects: selectedHistoryItem.testObjects || [],
         stats: selectedHistoryItem.stats
      });
      setSelectedHistoryItem(null);
@@ -1209,9 +1216,15 @@ const App = () => {
   };
 
   // --- Derived Values ---
+  const isAnalyzing = currentProjectData?.isAnalyzing || false;
+  const activeScan = currentProjectData?.activeScan || null;
+  // White Screen 방지: activeScan이나 testObjects가 null일 때 발생할 수 있는 참조 오류(undefined.length 등)를 확실히 막아줍니다.
+  const testObjects = activeScan?.testObjects || [];
+  const projectHistory = history.filter(h => h.projectId === currentProjectId);
   const currentUserDisplayName = manualInfo.displayName || "사용자";
   const currentUserPhoto = manualInfo.photoURL || null;
 
+  // --- Group History by Category ---
   const groupedHistory = projectHistory.reduce((acc, item) => {
     const cat = item.category || '미분류';
     if (!acc[cat]) acc[cat] = [];
@@ -1227,17 +1240,21 @@ const App = () => {
      return idxA - idxB;
   });
 
-  // --- Render Sections (인트로 ~ 메인까지 모든 레이아웃 원본 그대로 유지) ---
+  // --- Render Sections (복원된 줄바꿈과 예쁜 포맷팅) ---
   if (appState === 'intro') {
     return (
       <div className="min-h-screen bg-[#001529] flex flex-col items-center justify-center p-6 text-white font-sans">
         <style>{styleSheet}</style>
         <div className="relative mb-10">
           <div className="absolute inset-0 bg-blue-500 blur-3xl opacity-30 animate-pulse"></div>
-          <div className="bg-white/10 p-5 rounded-[2.5rem] border border-white/20 backdrop-blur-xl mb-6 shadow-2xl relative z-10"><Building2 className="w-16 h-16 text-[#0066FF]" /></div>
+          <div className="bg-white/10 p-5 rounded-[2.5rem] border border-white/20 backdrop-blur-xl mb-6 shadow-2xl relative z-10">
+            <Building2 className="w-16 h-16 text-[#0066FF]" />
+          </div>
         </div>
         <div className="text-center mb-12">
-          <h1 className="text-4xl font-black tracking-tight mb-3 italic"><span className="text-[#0066FF] not-italic">APTNER</span> <span className="text-white opacity-90">QA PRO</span></h1>
+          <h1 className="text-4xl font-black tracking-tight mb-3 italic">
+            <span className="text-[#0066FF] not-italic">APTNER</span> <span className="text-white opacity-90">QA PRO</span>
+          </h1>
           <p className="text-blue-300 font-bold tracking-[0.4em] text-[10px] uppercase">Collaborative UI Testing System</p>
         </div>
         <div className="w-72 h-1.5 bg-white/5 rounded-full overflow-hidden mb-5 border border-white/10">
@@ -1258,27 +1275,61 @@ const App = () => {
         
         <div className="w-full max-w-xs">
           <div className="flex bg-white/5 rounded-2xl p-1 mb-6 border border-white/10">
-            <button onClick={() => {setAuthMode('login'); setLoginErrorMsg('');}} className={`flex-1 py-3 text-xs font-black rounded-xl transition-all ${authMode === 'login' ? 'bg-[#0066FF] text-white shadow-lg shadow-blue-500/20' : 'text-white/40 hover:text-white'}`}>로그인</button>
-            <button onClick={() => {setAuthMode('register'); setLoginErrorMsg('');}} className={`flex-1 py-3 text-xs font-black rounded-xl transition-all ${authMode === 'register' ? 'bg-[#0066FF] text-white shadow-lg shadow-blue-500/20' : 'text-white/40 hover:text-white'}`}>멤버 등록</button>
+            <button 
+              onClick={() => {setAuthMode('login'); setLoginErrorMsg('');}} 
+              className={`flex-1 py-3 text-xs font-black rounded-xl transition-all ${authMode === 'login' ? 'bg-[#0066FF] text-white shadow-lg shadow-blue-500/20' : 'text-white/40 hover:text-white'}`}
+            >
+              로그인
+            </button>
+            <button 
+              onClick={() => {setAuthMode('register'); setLoginErrorMsg('');}} 
+              className={`flex-1 py-3 text-xs font-black rounded-xl transition-all ${authMode === 'register' ? 'bg-[#0066FF] text-white shadow-lg shadow-blue-500/20' : 'text-white/40 hover:text-white'}`}
+            >
+              멤버 등록
+            </button>
           </div>
 
           <div className="space-y-4">
             <div className="space-y-1.5">
               <label className="text-[10px] font-black text-blue-400 uppercase tracking-widest ml-1">Connect ID</label>
-              <input type="text" placeholder="영문 또는 숫자 입력" className="w-full px-5 py-3.5 bg-white/5 border border-white/10 rounded-xl outline-none focus:border-[#0066FF] focus:bg-[#0066FF]/10 focus:ring-4 focus:ring-[#0066FF]/30 focus:shadow-[0_0_20px_rgba(0,102,255,0.4)] transition-all duration-300 text-sm font-bold text-white placeholder-white/30" value={memberId} onChange={(e) => setMemberId(e.target.value)} />
+              <input 
+                type="text" 
+                placeholder="영문 또는 숫자 입력" 
+                className="w-full px-5 py-3.5 bg-white/5 border border-white/10 rounded-xl outline-none focus:border-[#0066FF] focus:bg-[#0066FF]/10 focus:ring-4 focus:ring-[#0066FF]/30 transition-all duration-300 text-sm font-bold text-white placeholder-white/30" 
+                value={memberId} 
+                onChange={(e) => setMemberId(e.target.value)} 
+              />
             </div>
             <div className="space-y-1.5">
               <label className="text-[10px] font-black text-blue-400 uppercase tracking-widest ml-1">Password</label>
-              <input type="password" placeholder="비밀번호 입력" className="w-full px-5 py-3.5 bg-white/5 border border-white/10 rounded-xl outline-none focus:border-[#0066FF] focus:bg-[#0066FF]/10 focus:ring-4 focus:ring-[#0066FF]/30 focus:shadow-[0_0_20px_rgba(0,102,255,0.4)] transition-all duration-300 text-sm font-bold text-white placeholder-white/30" value={memberPw} onChange={(e) => setMemberPw(e.target.value)} onKeyPress={(e) => e.key === 'Enter' && (authMode === 'login' ? handleCustomLogin() : handleCustomRegister())} />
+              <input 
+                type="password" 
+                placeholder="비밀번호 입력" 
+                className="w-full px-5 py-3.5 bg-white/5 border border-white/10 rounded-xl outline-none focus:border-[#0066FF] focus:bg-[#0066FF]/10 focus:ring-4 focus:ring-[#0066FF]/30 transition-all duration-300 text-sm font-bold text-white placeholder-white/30" 
+                value={memberPw} 
+                onChange={(e) => setMemberPw(e.target.value)} 
+                onKeyPress={(e) => e.key === 'Enter' && (authMode === 'login' ? handleCustomLogin() : handleCustomRegister())} 
+              />
             </div>
             {authMode === 'register' && (
               <div className="space-y-1.5">
                 <label className="text-[10px] font-black text-blue-400 uppercase tracking-widest ml-1">Display Name</label>
-                <input type="text" placeholder="예: 홍길동" className="w-full px-5 py-3.5 bg-white/5 border border-white/10 rounded-xl outline-none focus:border-[#0066FF] focus:bg-[#0066FF]/10 focus:ring-4 focus:ring-[#0066FF]/30 focus:shadow-[0_0_20px_rgba(0,102,255,0.4)] transition-all duration-300 text-sm font-bold text-white placeholder-white/30" value={memberName} onChange={(e) => setMemberName(e.target.value)} onKeyPress={(e) => e.key === 'Enter' && handleCustomRegister()} />
+                <input 
+                  type="text" 
+                  placeholder="예: 홍길동" 
+                  className="w-full px-5 py-3.5 bg-white/5 border border-white/10 rounded-xl outline-none focus:border-[#0066FF] focus:bg-[#0066FF]/10 focus:ring-4 focus:ring-[#0066FF]/30 transition-all duration-300 text-sm font-bold text-white placeholder-white/30" 
+                  value={memberName} 
+                  onChange={(e) => setMemberName(e.target.value)} 
+                  onKeyPress={(e) => e.key === 'Enter' && handleCustomRegister()} 
+                />
               </div>
             )}
             {loginErrorMsg && <p className="text-rose-400 text-center text-[11px] font-bold mt-2 animate-pulse">{loginErrorMsg}</p>}
-            <button onClick={authMode === 'login' ? handleCustomLogin : handleCustomRegister} disabled={isLoggingIn || !isAuthReady} className="w-full py-4 mt-4 bg-white text-[#001529] rounded-2xl font-black text-sm shadow-xl active:scale-95 disabled:opacity-80 transition-all flex items-center justify-center gap-2">
+            <button 
+              onClick={authMode === 'login' ? handleCustomLogin : handleCustomRegister} 
+              disabled={isLoggingIn || !isAuthReady} 
+              className="w-full py-4 mt-4 bg-white text-[#001529] rounded-2xl font-black text-sm shadow-xl active:scale-95 disabled:opacity-80 transition-all flex items-center justify-center gap-2"
+            >
               {(isLoggingIn || !isAuthReady) && <Loader2 className="w-5 h-5 animate-spin" />}
               {authMode === 'login' ? '워크스페이스 접속' : '계정 등록 및 시작'}
             </button>
@@ -1686,7 +1737,7 @@ const App = () => {
                 <p className="text-xs text-white/40 text-center mt-10">저장된 아카이브가 없습니다.</p>
              ) : (
                 displayGroups.map(cat => {
-                  const groupStats = groupedHistory[cat].reduce((acc, item) => {
+                  const groupStats = (groupedHistory[cat] || []).reduce((acc, item) => {
                      acc.pass += (item.stats?.pass || 0);
                      acc.fail += (item.stats?.fail || 0);
                      return acc;
@@ -1719,7 +1770,7 @@ const App = () => {
                      </div>
                      <div className="flex-1 min-w-0 pr-6">
                         <p className="text-sm font-black text-white truncate uppercase tracking-tight">{cat}</p>
-                        <p className="text-[10px] text-white/40 font-bold uppercase tracking-widest">{groupedHistory[cat].length} Reports</p>
+                        <p className="text-[10px] text-white/40 font-bold uppercase tracking-widest">{(groupedHistory[cat] || []).length} Reports</p>
                         <div className="flex gap-1.5 mt-1.5">
                            <span className="text-[8px] font-black px-1.5 py-0.5 bg-emerald-500/20 text-emerald-400 rounded border border-emerald-500/30 uppercase tracking-tighter">{groupStats.pass} Pass</span>
                            <span className="text-[8px] font-black px-1.5 py-0.5 bg-rose-500/20 text-rose-400 rounded border border-rose-500/30 uppercase tracking-tighter">{groupStats.fail} Fail</span>
@@ -1743,7 +1794,7 @@ const App = () => {
                     <div className="p-3 bg-gradient-to-tr from-blue-600 to-blue-400 text-white rounded-xl shadow-lg shadow-blue-500/20"><FolderOpen className="w-5 h-5" /></div>
                     <div>
                        <h2 className="text-lg font-black uppercase tracking-tighter text-slate-800">{selectedFolder}</h2>
-                       <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">총 {groupedHistory[selectedFolder].length}건의 히스토리 리포트</p>
+                       <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">총 {(groupedHistory[selectedFolder] || []).length}건의 히스토리 리포트</p>
                     </div>
                  </div>
                  <button onClick={() => setSelectedFolder(null)} className="p-2 hover:bg-slate-100 text-slate-400 rounded-full transition-colors"><X className="w-5 h-5" /></button>
@@ -1757,7 +1808,7 @@ const App = () => {
                    }
                  `}</style>
                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-4">
-                    {groupedHistory[selectedFolder].map(item => (
+                    {(groupedHistory[selectedFolder] || []).map(item => (
                        <div key={item.id} 
                             draggable={true}
                             onDragStart={(e) => handleHistoryDragStart(e, item.id)}
@@ -1831,7 +1882,7 @@ const App = () => {
               <div className="flex-1 overflow-y-auto scrollbar-hide p-8 grid grid-cols-1 lg:grid-cols-2 gap-8 bg-slate-50">
                  <div className="bg-white rounded-3xl p-4 flex items-center justify-center border border-slate-100 shadow-sm"><img src={selectedHistoryItem.image} className="max-w-full rounded-xl shadow-md" /></div>
                  <div className="space-y-4">
-                    {selectedHistoryItem.testObjects.map(obj => (
+                    {(selectedHistoryItem.testObjects || []).map(obj => (
                        <div key={obj.id} className="p-4 border rounded-2xl flex flex-col bg-white shadow-sm hover:shadow-md transition-shadow">
                           <div className="flex justify-between items-center w-full">
                              <div>
@@ -1844,12 +1895,12 @@ const App = () => {
                           </div>
                           {obj.testCases && obj.testCases.length > 0 && (
                              <div className="mt-3 pt-3 border-t border-slate-100 space-y-1">
-                                {obj.testCases.map(tc => (
+                                {(obj.testCases || []).map(tc => (
                                    <div key={tc.id} className="flex justify-between items-center">
                                       <span className="text-[10px] text-slate-500 font-bold">• {tc.label}</span>
                                       <div className="flex gap-1 shrink-0">
                                          <button disabled={isProjectClosed} onClick={() => toggleHistoryTCStatus(obj.id, tc.id, 'PASS')} className={`px-2 py-1 rounded text-[8px] font-black uppercase transition-all ${tc.status === 'PASS' ? 'text-white bg-emerald-500 shadow-sm' : `text-slate-400 bg-slate-100 ${isProjectClosed ? '' : 'hover:bg-emerald-50 hover:text-emerald-500'}`} ${isProjectClosed ? 'opacity-60 cursor-not-allowed' : ''}`}>PASS</button>
-                                         <button disabled={isProjectClosed} onClick={() => toggleHistoryTCStatus(obj.id, tc.id, 'FAIL')} className={`px-2 py-1 rounded text-[8px] font-black uppercase transition-all ${tc.status === 'FAIL' ? 'text-white bg-rose-500 shadow-sm' : `text-slate-400 bg-slate-100 ${isProjectClosed ? '' : 'hover:bg-emerald-50 hover:text-emerald-500'}`} ${isProjectClosed ? 'opacity-60 cursor-not-allowed' : ''}`}>FAIL</button>
+                                         <button disabled={isProjectClosed} onClick={() => toggleHistoryTCStatus(obj.id, tc.id, 'FAIL')} className={`px-2 py-1 rounded text-[8px] font-black uppercase transition-all ${tc.status === 'FAIL' ? 'text-white bg-rose-500 shadow-sm' : `text-slate-400 bg-slate-100 ${isProjectClosed ? '' : 'hover:bg-rose-50 hover:text-rose-500'}`} ${isProjectClosed ? 'opacity-60 cursor-not-allowed' : ''}`}>FAIL</button>
                                       </div>
                                    </div>
                                 ))}
@@ -2168,7 +2219,7 @@ const App = () => {
                                              <input type="text" placeholder="새 케이스 입력" className="flex-1 px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-bold outline-none" value={newTestCaseLabel} onChange={(e) => setNewTestCaseLabel(e.target.value)} onKeyPress={(e) => e.key === 'Enter' && addTestCaseToObject(obj.id)} autoFocus />
                                              <div className="flex gap-1 shrink-0">
                                                 <button onClick={() => { setNewTestCaseLabelObjId(null); setNewTestCaseLabel(''); }} className="px-2 py-1.5 rounded-lg text-[9px] font-black uppercase bg-white text-slate-400 border border-slate-200 hover:bg-slate-50">취소</button>
-                                                <button onClick={addTestCaseToObject(obj.id)} className="px-2 py-1.5 rounded-lg text-[9px] font-black uppercase bg-slate-800 text-white shadow-md hover:bg-slate-900">추가</button>
+                                                <button onClick={() => addTestCaseToObject(obj.id)} className="px-2 py-1.5 rounded-lg text-[9px] font-black uppercase bg-slate-800 text-white shadow-md hover:bg-slate-900">추가</button>
                                              </div>
                                           </div>
                                        ) : (
