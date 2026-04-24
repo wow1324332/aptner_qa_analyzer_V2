@@ -347,7 +347,7 @@ const App = () => {
           if (Date.now() - data.lastSeen < 300000) usersList.push(data);
         });
         setActiveUsers(list => JSON.stringify(list) === JSON.stringify(usersList) ? list : usersList);
-      }, (err) => console.error(err));
+      });
 
       return () => {
         clearInterval(interval);
@@ -369,7 +369,7 @@ const App = () => {
       } else {
         setDoc(catRef, { list: ['미분류', '홈화면', '결제', '등록', '커뮤니티'] });
       }
-    }, (err) => console.error(err));
+    });
 
     // Components & Test Cases
     const compRef = getPublicDoc('settings', 'components');
@@ -391,7 +391,7 @@ const App = () => {
         ];
         setDoc(compRef, { list: defaultList });
       }
-    }, (err) => console.error(err));
+    });
 
     return () => { unsubCat(); unsubComp(); };
   }, [isAuthReady, user]);
@@ -427,7 +427,7 @@ const App = () => {
         setCurrentProjectData(null);
         setAppState('projects');
       }
-    }, (err) => console.error(err));
+    });
     return () => unsubProject();
   }, [isAuthReady, user, currentProjectId]);
 
@@ -655,30 +655,43 @@ const App = () => {
 
     const callApi = async (attempt = 0) => {
       try {
-        // [업데이트 핵심] 404/400 에러를 방지하기 위해 사용자 목록에 확인된 v1beta 엔드포인트와 2.0-flash 모델을 명시합니다.
-        const aiModel = isCanvas ? 'gemini-2.5-flash-preview-09-2025' : 'gemini-2.0-flash';
+        // [완벽 해결] 구글 API 정책에 맞춰 Vercel 환경에서는 최신 모델인 gemini-2.5-flash를 사용합니다.
+        const aiModel = isCanvas ? 'gemini-2.5-flash-preview-09-2025' : 'gemini-2.5-flash';
         const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${aiModel}:generateContent?key=${apiKey}`;
 
-        const response = await fetch(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+        const response = await fetch(apiUrl, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
+        });
+        
         if (!response.ok) {
           const errorData = await response.json();
-          throw new Error(errorData.error?.message || "API 호출 실패");
+          const errorMsg = errorData.error?.message || `HTTP 에러 ${response.status}`;
+          throw new Error(errorMsg);
         }
+        
         const data = await response.json();
         
-        // [빌드 에러 해결] 정규식(/)과 백틱(```) 충돌을 방지하기 위해 split과 join을 사용합니다.
+        // [Vercel 빌드 에러 해결] 정규식(/)과 백틱(```)이 빌드 도구(esbuild)를 강제로 종료시키는 버그를
+        // 원천 차단하기 위해 아스키코드를 이용하여 백틱 문자열을 동적으로 생성 후 처리합니다.
         const textResult = data.candidates?.[0]?.content?.parts?.[0]?.text || "{}";
-        const cleanText = textResult.split('\`\`\`json').join('').split('\`\`\`').join('').trim();
+        const bt = String.fromCharCode(96, 96, 96);
+        const cleanText = textResult.split(bt + 'json').join('').split(bt).join('').trim();
         const parsed = JSON.parse(cleanText);
         
-        const componentMap = appComponents.reduce((acc, curr) => { acc[curr.type] = curr.cases; return acc; }, {});
-        return (parsed.objects || []).map(obj => {
+        const componentMap = appComponents.reduce((acc, curr) => {
+           acc[curr.type] = curr.cases;
+           return acc;
+        }, {});
+
+        const mappedObjects = (parsed.objects || []).map(obj => {
            const typeCases = componentMap[obj.type] || [];
            const tcArray = typeCases.map((c, i) => ({ id: `tc_${Date.now()}_${Math.random().toString(36).substr(2, 9)}_${i}`, label: c, status: 'PENDING' }));
            return { ...obj, id: `auto_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`, status: 'PENDING', testCases: tcArray };
         });
+        return mappedObjects;
+
       } catch (err) {
-        if (attempt < 2 && !err.message.includes('API key')) { 
+        if (attempt < 2 && !err.message.includes('API key not valid')) { 
             await new Promise(r => setTimeout(r, Math.pow(2, attempt) * 1000)); return callApi(attempt + 1); 
         }
         throw err;
@@ -691,8 +704,8 @@ const App = () => {
     } catch (err) {
       console.error("AI Analysis Error:", err);
       let korError = err.message;
-      if (err.message.includes('API key not valid')) korError = "API 키가 올바르지 않거나 잘못 입력되었습니다.";
-      else if (err.message.includes('not found') || err.message.includes('404')) korError = "해당 AI 모델에 접근할 수 없습니다. 모델 설정을 확인하세요.";
+      if (err.message.includes('API key not valid')) korError = "API 키가 올바르지 않거나 잘못 입력되었습니다. Vercel 환경 변수를 다시 확인하세요.";
+      else if (err.message.includes('not found') || err.message.includes('404')) korError = "해당 AI 모델에 접근할 수 없습니다. 새 프로젝트에서 발급받은 키인지 확인하세요.";
       
       await updateDoc(projectRef, { 
         isAnalyzing: false,
@@ -1205,15 +1218,9 @@ const App = () => {
   };
 
   // --- Derived Values ---
-  const isAnalyzing = currentProjectData?.isAnalyzing || false;
-  const activeScan = currentProjectData?.activeScan || null;
-  // White Screen 방지: activeScan이나 testObjects가 null일 때 발생할 수 있는 참조 오류(undefined.length 등)를 확실히 막아줍니다.
-  const testObjects = activeScan?.testObjects || [];
-  const projectHistory = history.filter(h => h.projectId === currentProjectId);
   const currentUserDisplayName = manualInfo.displayName || "사용자";
   const currentUserPhoto = manualInfo.photoURL || null;
 
-  // --- Group History by Category ---
   const groupedHistory = projectHistory.reduce((acc, item) => {
     const cat = item.category || '미분류';
     if (!acc[cat]) acc[cat] = [];
@@ -1229,7 +1236,7 @@ const App = () => {
      return idxA - idxB;
   });
 
-  // --- Render Sections (복원된 줄바꿈과 예쁜 포맷팅) ---
+  // --- Render Sections ---
   if (appState === 'intro') {
     return (
       <div className="min-h-screen bg-[#001529] flex flex-col items-center justify-center p-6 text-white font-sans">
@@ -1596,7 +1603,7 @@ const App = () => {
             {!editingCompType ? (
               <>
                 <div className="flex gap-2 mb-4">
-                  <input type="text" placeholder="새 컴포넌트 추가" className="flex-1 px-4 py-2 border border-slate-200 rounded-xl text-sm font-bold outline-none focus:border-[#0066FF]" value={newCompType} onChange={(e) => setNewCompType(e.target.value)} onKeyPress={(e) => e.key === 'Enter' && addComponentType()} />
+                  <input type="text" placeholder="새 컴포넌트 추가 (예: Modal)" className="flex-1 px-4 py-2 border border-slate-200 rounded-xl text-sm font-bold outline-none focus:border-[#0066FF]" value={newCompType} onChange={(e) => setNewCompType(e.target.value)} onKeyPress={(e) => e.key === 'Enter' && addComponentType()} />
                   <button onClick={addComponentType} className="px-4 py-2 bg-[#001529] text-white rounded-xl font-bold text-sm shadow hover:bg-black transition-colors"><Plus className="w-4 h-4" /></button>
                 </div>
                 <div className="space-y-2 overflow-y-auto flex-1 pr-1">
@@ -2078,11 +2085,11 @@ const App = () => {
                     </div>
                   )}
 
-                  {(currentProjectData?.activeScan?.testObjects?.length || 0) > 0 && (
-                    <div className="space-y-4">
-                      {(currentProjectData.activeScan.testObjects || []).map(obj => (
-                        <div key={obj.id} className={`p-6 bg-white border rounded-[2rem] shadow-sm hover:shadow-xl transition-all ${obj.status === 'PASS' ? 'border-emerald-100 bg-emerald-50/10' : obj.status === 'FAIL' ? 'border-rose-100 bg-rose-50/10' : 'border-slate-100'}`}>
-                          <div className="flex justify-between items-center cursor-pointer" onClick={() => setExpandedObjId(expandedObjId === obj.id ? null : obj.id)}>
+                  {isAnalyzing ? (
+                    // --- Console Simple Animation ---
+                    <div className="h-full min-h-[300px] flex flex-col items-center justify-center p-8 bg-slate-50 rounded-[2rem]">
+                        <Loader2 className="w-8 h-8 text-blue-500 animate-spin mb-4" />
+                        <h3 className="text-lg font-black text-slate-700 tracking-tight mb-2">AI 분석 진행 중</h3>
                         <p className="text-xs text-slate-500 font-bold">화면의 UI 컴포넌트를 식별하고 있습니다...</p>
                     </div>
                   ) : testObjects.length === 0 ? (
