@@ -655,41 +655,30 @@ const App = () => {
 
     const callApi = async (attempt = 0) => {
       try {
-        // [완벽 해결] 구글 API 신규 정책에 맞춰 Vercel에서는 최신 정식 모델인 gemini-2.5-flash를 사용합니다.
-        const aiModel = isCanvas ? 'gemini-2.5-flash-preview-09-2025' : 'gemini-2.5-flash';
+        // [업데이트 핵심] 404/400 에러를 방지하기 위해 사용자 목록에 확인된 v1beta 엔드포인트와 2.0-flash 모델을 명시합니다.
+        const aiModel = isCanvas ? 'gemini-2.5-flash-preview-09-2025' : 'gemini-2.0-flash';
         const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${aiModel}:generateContent?key=${apiKey}`;
 
-        const response = await fetch(apiUrl, {
-          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
-        });
-        
+        const response = await fetch(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
         if (!response.ok) {
           const errorData = await response.json();
-          const errorMsg = errorData.error?.message || `HTTP 에러 ${response.status}`;
-          throw new Error(errorMsg);
+          throw new Error(errorData.error?.message || "API 호출 실패");
         }
-        
         const data = await response.json();
         
-        // [Vercel 빌드 에러 해결] 정규식의 백틱(```)이 빌드 도구(esbuild)를 망가뜨리는 치명적인 버그를 Split 방식 적용으로 우회 해결
-        const textContent = data.candidates?.[0]?.content?.parts?.[0]?.text || "{}";
-        const cleanText = textContent.split('```json').join('').split('```').join('').trim();
+        // [빌드 에러 해결] 정규식(/)과 백틱(```) 충돌을 방지하기 위해 split과 join을 사용합니다.
+        const textResult = data.candidates?.[0]?.content?.parts?.[0]?.text || "{}";
+        const cleanText = textResult.split('\`\`\`json').join('').split('\`\`\`').join('').trim();
         const parsed = JSON.parse(cleanText);
         
-        const componentMap = appComponents.reduce((acc, curr) => {
-           acc[curr.type] = curr.cases;
-           return acc;
-        }, {});
-
-        const mappedObjects = (parsed.objects || []).map(obj => {
+        const componentMap = appComponents.reduce((acc, curr) => { acc[curr.type] = curr.cases; return acc; }, {});
+        return (parsed.objects || []).map(obj => {
            const typeCases = componentMap[obj.type] || [];
            const tcArray = typeCases.map((c, i) => ({ id: `tc_${Date.now()}_${Math.random().toString(36).substr(2, 9)}_${i}`, label: c, status: 'PENDING' }));
            return { ...obj, id: `auto_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`, status: 'PENDING', testCases: tcArray };
         });
-        return mappedObjects;
-
       } catch (err) {
-        if (attempt < 2 && !err.message.includes('API key not valid')) { 
+        if (attempt < 2 && !err.message.includes('API key')) { 
             await new Promise(r => setTimeout(r, Math.pow(2, attempt) * 1000)); return callApi(attempt + 1); 
         }
         throw err;
@@ -702,8 +691,8 @@ const App = () => {
     } catch (err) {
       console.error("AI Analysis Error:", err);
       let korError = err.message;
-      if (err.message.includes('API key not valid')) korError = "API 키가 올바르지 않거나 잘못 입력되었습니다. Vercel 환경 변수를 다시 확인하세요.";
-      else if (err.message.includes('not found') || err.message.includes('404')) korError = "해당 AI 모델에 접근할 수 없습니다. 새 프로젝트에서 발급받은 키인지 확인하세요.";
+      if (err.message.includes('API key not valid')) korError = "API 키가 올바르지 않거나 잘못 입력되었습니다.";
+      else if (err.message.includes('not found') || err.message.includes('404')) korError = "해당 AI 모델에 접근할 수 없습니다. 모델 설정을 확인하세요.";
       
       await updateDoc(projectRef, { 
         isAnalyzing: false,
