@@ -3,7 +3,7 @@ import {
   Upload, Loader2, Layout, RefreshCcw, Building2, Plus, Trash2, X, Save, 
   ChevronRight, ChevronLeft, FolderOpen, FolderPlus, Layers, PlusCircle, 
   Sparkles, LogOut, Camera, Edit2, Check, Settings as SettingsIcon, 
-  AlertOctagon, ChevronUp, ChevronDown, Folder 
+  AlertOctagon, ChevronUp, ChevronDown, Folder, Download
 } from 'lucide-react';
 
 import { initializeApp } from 'firebase/app';
@@ -217,6 +217,10 @@ const App = () => {
   const [isSavingReport, setIsSavingReport] = useState(false);
   const [showScrollTop, setShowScrollTop] = useState(false);
   
+  // PWA 설치 관련 State
+  const [deferredPrompt, setDeferredPrompt] = useState(null);
+  const [isInstallable, setIsInstallable] = useState(false);
+  
   const mainScrollRef = useRef(null);
   const consoleScrollRef = useRef(null);
 
@@ -234,6 +238,48 @@ const App = () => {
   const scrollToTop = () => {
     if (mainScrollRef.current) mainScrollRef.current.scrollTo({ top: 0, behavior: 'smooth' });
     window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  // --- PWA Install Logic ---
+  useEffect(() => {
+    const handleBeforeInstallPrompt = (e) => {
+      // 기본 브라우저 설치 프롬프트 표시 방지
+      e.preventDefault();
+      // 이벤트 보관
+      setDeferredPrompt(e);
+      // 설치 가능 상태로 업데이트
+      setIsInstallable(true);
+    };
+
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+
+    const handleAppInstalled = () => {
+      setIsInstallable(false);
+      setDeferredPrompt(null);
+      console.log('PWA app installed');
+    };
+
+    window.addEventListener('appinstalled', handleAppInstalled);
+
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+      window.removeEventListener('appinstalled', handleAppInstalled);
+    };
+  }, []);
+
+  const handleInstallClick = async () => {
+    if (!deferredPrompt) return;
+    
+    // 보관해둔 프롬프트 띄우기
+    deferredPrompt.prompt();
+    
+    // 사용자의 선택 결과 대기
+    const { outcome } = await deferredPrompt.userChoice;
+    console.log(`User installation prompt choice: ${outcome}`);
+    
+    // 프롬프트는 한 번만 사용할 수 있으므로 상태 초기화
+    setDeferredPrompt(null);
+    setIsInstallable(false);
   };
 
   // --- Auth Initialization ---
@@ -842,9 +888,21 @@ const App = () => {
 
   if (appState === 'login') {
     return (
-      <div className="min-h-screen bg-[#001529] flex flex-col items-center justify-center p-6 text-white overflow-hidden font-sans">
+      <div className="min-h-screen bg-[#001529] flex flex-col items-center justify-center p-6 text-white overflow-hidden font-sans relative">
         <style>{styleSheet}</style>
-        <div className="w-full max-w-xs space-y-6">
+        
+        {/* 앱 설치 버튼 (PWA 설치 가능 상태일 때만 노출) */}
+        {isInstallable && (
+          <button 
+            onClick={handleInstallClick}
+            className="absolute top-6 right-6 md:top-8 md:right-8 px-5 py-2.5 bg-white/5 hover:bg-[#0066FF] border border-white/10 hover:border-[#0066FF] rounded-full flex items-center gap-2.5 text-xs font-black transition-all shadow-[0_4px_12px_rgba(0,0,0,0.1)] active:scale-95 group"
+          >
+            <Download className="w-4 h-4 text-white/70 group-hover:text-white transition-colors animate-bounce" />
+            앱 설치하기
+          </button>
+        )}
+
+        <div className="w-full max-w-xs space-y-6 z-10 relative">
           <h2 className="text-3xl font-black text-center mb-10 tracking-tight">Workspace Access</h2>
           <div className="flex bg-white/5 rounded-2xl p-1 mb-6 border border-white/10">
             <button onClick={() => setAuthMode('login')} className={`flex-1 py-3 text-xs font-black rounded-xl transition-all ${authMode === 'login' ? 'bg-[#0066FF] text-white shadow-lg' : 'text-white/40'}`}>로그인</button>
@@ -1601,34 +1659,34 @@ const App = () => {
 
                              {expandedObjId === obj.id && (
                                 <div className="w-full mt-4 pt-4 border-t border-slate-200/60 space-y-2 cursor-default" onClick={e => e.stopPropagation()}>
-                                    {(obj.testCases || []).length > 0 ? (obj.testCases || []).map(tc => {
-                                       if (editingTestCaseId === tc.id) {
-                                          return (
-                                             <div key={tc.id} className="flex items-center justify-between p-3 bg-white/60 rounded-xl border border-slate-100 shadow-sm gap-2">
-                                                <input type="text" className="flex-1 px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-bold outline-none" value={editingTestCaseLabel} onChange={(e) => setEditingTestCaseLabel(e.target.value)} onKeyPress={(e) => e.key === 'Enter' && saveEditedTestCase(obj.id)} autoFocus />
-                                                <div className="flex gap-1 shrink-0">
-                                                   <button onClick={() => setEditingTestCaseId(null)} className="px-2 py-1.5 rounded-lg text-[9px] font-black uppercase bg-white text-slate-400 border border-slate-200 hover:bg-slate-50">취소</button>
-                                                   <button onClick={() => saveEditedTestCase(obj.id)} className="px-2 py-1.5 rounded-lg text-[9px] font-black uppercase bg-blue-500 text-white shadow-md hover:bg-blue-600">저장</button>
-                                                </div>
-                                             </div>
-                                          )
-                                       }
-                                       return (
-                                       <div key={tc.id} className="flex items-center justify-between p-3 bg-white/60 rounded-xl border border-slate-100 shadow-sm group/tc">
-                                          <div className="flex items-center gap-2 flex-1 min-w-0 pr-2">
-                                             <span className="text-xs font-bold text-slate-700 truncate">{tc.label}</span>
-                                             {!isProjectClosed && (
-                                                <div className="hidden group-hover/tc:flex items-center gap-1 shrink-0">
-                                                   <button onClick={() => { setEditingTestCaseId(tc.id); setEditingTestCaseLabel(tc.label); }} className="p-1 text-slate-300 hover:text-blue-500 transition-colors"><Edit2 className="w-3 h-3" /></button>
-                                                   <button onClick={() => deleteTestCaseFromObject(obj.id, tc.id)} className="p-1 text-slate-300 hover:text-rose-500 transition-colors"><Trash2 className="w-3 h-3" /></button>
-                                                </div>
-                                             )}
-                                          </div>
-                                          <div className="flex gap-2 shrink-0">
-                                             <button disabled={isProjectClosed} onClick={() => toggleTestCaseStatus(obj.id, tc.id, 'PASS')} className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase transition-all ${tc.status === 'PASS' ? 'bg-emerald-500 text-white shadow-md' : 'bg-white text-slate-400 border border-slate-200 hover:border-emerald-500 hover:text-emerald-500'} ${isProjectClosed ? 'opacity-50 cursor-not-allowed' : ''}`}>PASS</button>
-                                             <button disabled={isProjectClosed} onClick={() => toggleTestCaseStatus(obj.id, tc.id, 'FAIL')} className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase transition-all ${tc.status === 'FAIL' ? 'bg-rose-500 text-white shadow-md' : 'bg-white text-slate-400 border border-slate-200 hover:border-rose-500 hover:text-rose-500'} ${isProjectClosed ? 'opacity-50 cursor-not-allowed' : ''}`}>FAIL</button>
-                                          </div>
-                                       </div>
+                                   {(obj.testCases || []).length > 0 ? (obj.testCases || []).map(tc => {
+                                      if (editingTestCaseId === tc.id) {
+                                         return (
+                                            <div key={tc.id} className="flex items-center justify-between p-3 bg-white/60 rounded-xl border border-slate-100 shadow-sm gap-2">
+                                               <input type="text" className="flex-1 px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-bold outline-none" value={editingTestCaseLabel} onChange={(e) => setEditingTestCaseLabel(e.target.value)} onKeyPress={(e) => e.key === 'Enter' && saveEditedTestCase(obj.id)} autoFocus />
+                                               <div className="flex gap-1 shrink-0">
+                                                  <button onClick={() => setEditingTestCaseId(null)} className="px-2 py-1.5 rounded-lg text-[9px] font-black uppercase bg-white text-slate-400 border border-slate-200 hover:bg-slate-50">취소</button>
+                                                  <button onClick={() => saveEditedTestCase(obj.id)} className="px-2 py-1.5 rounded-lg text-[9px] font-black uppercase bg-blue-500 text-white shadow-md hover:bg-blue-600">저장</button>
+                                               </div>
+                                            </div>
+                                         )
+                                      }
+                                      return (
+                                      <div key={tc.id} className="flex items-center justify-between p-3 bg-white/60 rounded-xl border border-slate-100 shadow-sm group/tc">
+                                         <div className="flex items-center gap-2 flex-1 min-w-0 pr-2">
+                                            <span className="text-xs font-bold text-slate-700 truncate">{tc.label}</span>
+                                            {!isProjectClosed && (
+                                               <div className="hidden group-hover/tc:flex items-center gap-1 shrink-0">
+                                                  <button onClick={() => { setEditingTestCaseId(tc.id); setEditingTestCaseLabel(tc.label); }} className="p-1 text-slate-300 hover:text-blue-500 transition-colors"><Edit2 className="w-3 h-3" /></button>
+                                                  <button onClick={() => deleteTestCaseFromObject(obj.id, tc.id)} className="p-1 text-slate-300 hover:text-rose-500 transition-colors"><Trash2 className="w-3 h-3" /></button>
+                                               </div>
+                                            )}
+                                         </div>
+                                         <div className="flex gap-2 shrink-0">
+                                            <button disabled={isProjectClosed} onClick={() => toggleTestCaseStatus(obj.id, tc.id, 'PASS')} className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase transition-all ${tc.status === 'PASS' ? 'bg-emerald-500 text-white shadow-md' : 'bg-white text-slate-400 border border-slate-200 hover:border-emerald-500 hover:text-emerald-500'} ${isProjectClosed ? 'opacity-50 cursor-not-allowed' : ''}`}>PASS</button>
+                                            <button disabled={isProjectClosed} onClick={() => toggleTestCaseStatus(obj.id, tc.id, 'FAIL')} className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase transition-all ${tc.status === 'FAIL' ? 'bg-rose-500 text-white shadow-md' : 'bg-white text-slate-400 border border-slate-200 hover:border-rose-500 hover:text-rose-500'} ${isProjectClosed ? 'opacity-50 cursor-not-allowed' : ''}`}>FAIL</button>
+                                         </div>
+                                      </div>
                                     )}) : (
                                        <p className="text-xs text-slate-400 font-bold italic text-center py-2">등록된 하위 테스트 케이스가 없습니다.</p>
                                     )}
