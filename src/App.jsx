@@ -268,7 +268,11 @@ const App = () => {
   }, []);
 
   const handleInstallClick = async () => {
-    if (!deferredPrompt) return;
+    if (!deferredPrompt) {
+      setLoginErrorMsg("Vercel 배포 및 PWA(manifest) 설정 후 실제 환경에서 설치가 활성화됩니다.");
+      setTimeout(() => setLoginErrorMsg(''), 4000);
+      return;
+    }
     
     // 보관해둔 프롬프트 띄우기
     deferredPrompt.prompt();
@@ -891,16 +895,14 @@ const App = () => {
       <div className="min-h-screen bg-[#001529] flex flex-col items-center justify-center p-6 text-white overflow-hidden font-sans relative">
         <style>{styleSheet}</style>
         
-        {/* 앱 설치 버튼 (PWA 설치 가능 상태일 때만 노출) */}
-        {isInstallable && (
-          <button 
-            onClick={handleInstallClick}
-            className="absolute top-6 right-6 md:top-8 md:right-8 px-5 py-2.5 bg-white/5 hover:bg-[#0066FF] border border-white/10 hover:border-[#0066FF] rounded-full flex items-center gap-2.5 text-xs font-black transition-all shadow-[0_4px_12px_rgba(0,0,0,0.1)] active:scale-95 group"
-          >
-            <Download className="w-4 h-4 text-white/70 group-hover:text-white transition-colors animate-bounce" />
-            앱 설치하기
-          </button>
-        )}
+        {/* 앱 설치 버튼 (뷰에서 항상 확인할 수 있도록 조건문 제거 및 z-index 추가) */}
+        <button 
+          onClick={handleInstallClick}
+          className="absolute top-6 right-6 md:top-8 md:right-8 px-5 py-2.5 bg-white/5 hover:bg-[#0066FF] border border-white/10 hover:border-[#0066FF] rounded-full flex items-center gap-2.5 text-xs font-black transition-all shadow-[0_4px_12px_rgba(0,0,0,0.1)] active:scale-95 group z-20"
+        >
+          <Download className="w-4 h-4 text-white/70 group-hover:text-white transition-colors animate-bounce" />
+          앱 설치하기
+        </button>
 
         <div className="w-full max-w-xs space-y-6 z-10 relative">
           <h2 className="text-3xl font-black text-center mb-10 tracking-tight">Workspace Access</h2>
