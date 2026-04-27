@@ -1,12 +1,30 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="ko">
   <head>
     <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>APTNER QA PRO</title>
+    
+    <!-- [추가된 부분 1] 브라우저가 PWA 앱 아이콘과 설정을 읽을 수 있도록 연결해줍니다. -->
+    <link rel="manifest" href="/manifest.json" />
+    <meta name="theme-color" content="#001529" />
+    
+    <title>Aptner QA Pro</title>
   </head>
   <body>
     <div id="root"></div>
+    <!-- 이 스크립트가 리액트 앱(App.jsx)을 불러오는 기존 핵심 코드입니다. -->
     <script type="module" src="/src/main.jsx"></script>
+    
+    <!-- [추가된 부분 2] 앱 설치가 가능하도록 백그라운드에서 서비스 워커(sw.js)를 실행합니다. -->
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('/sw.js').catch(err => {
+            console.log('Service Worker registration failed: ', err);
+          });
+        });
+      }
+    </script>
   </body>
 </html>
