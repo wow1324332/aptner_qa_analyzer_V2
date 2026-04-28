@@ -161,6 +161,14 @@ const App = () => {
   const [isCatModalOpen, setIsCatModalOpen] = useState(false);
   const [newCatName, setNewCatName] = useState('');
 
+  const [departments, setDepartments] = useState([{ id: 'default', name: '공통 사업부', order: 0 }]);
+  const [currentDepartment, setCurrentDepartment] = useState(null);
+  const [isAdminModalOpen, setIsAdminModalOpen] = useState(false);
+  const [newDeptName, setNewDeptName] = useState('');
+  const [draggedDeptId, setDraggedDeptId] = useState(null);
+  const [dragOverDeptId, setDragOverDeptId] = useState(null);
+  const [adminErrorMsg, setAdminErrorMsg] = useState('');
+
   const [appComponents, setAppComponents] = useState([]);
   const [isCompModalOpen, setIsCompModalOpen] = useState(false);
   const [editingCompType, setEditingCompType] = useState(null);
@@ -356,7 +364,14 @@ const App = () => {
         { type: 'Text', cases: ['텍스트 잘림 현상 확인', '오탈자 확인'] }
       ]});
     });
-    return () => { unsubCat(); unsubComp(); };
+
+    const deptRef = getPublicDoc('settings', 'departments');
+    const unsubDept = onSnapshot(deptRef, (docSnap) => {
+      if (docSnap.exists() && docSnap.data().list) setDepartments(docSnap.data().list.sort((a, b) => a.order - b.order));
+      else setDoc(deptRef, { list: [{ id: 'default', name: '공통 사업부', order: 0 }] });
+    });
+
+    return () => { unsubCat(); unsubComp(); unsubDept(); };
   }, [isAuthReady, user]);
 
   useEffect(() => {
@@ -425,13 +440,14 @@ const App = () => {
       const snap = await getDoc(getPublicDoc('members', safeId));
       if (!snap.exists() || snap.data().password !== memberPw) { setLoginErrorMsg("ID나 비밀번호가 틀립니다."); setIsLoggingIn(false); return; }
       setManualInfo({ displayName: snap.data().displayName, photoURL: snap.data().photoURL, memberId: safeId });
-      setAppState('projects');
+      setAppState('departmentSelect');
     } catch (e) { setLoginErrorMsg("로그인 중 오류가 발생했습니다."); } finally { setIsLoggingIn(false); }
   };
 
   const handleLogout = async () => {
     setAppState('login'); setManualInfo({ displayName: '', photoURL: '', memberId: null });
     setMemberId(''); setMemberPw(''); setMemberName(''); setLoginErrorMsg('');
+    setCurrentDepartment(null);
   };
 
   const handleProfileImageUpload = (e) => {
@@ -462,7 +478,8 @@ const App = () => {
     await setDoc(getPublicDoc('projects', pid), {
       name: newProjectName.trim(), createdAt: Date.now(), order: Date.now(),
       createdBy: manualInfo.memberId || user.uid, createdByName: manualInfo.displayName || "GUEST", createdByPhoto: manualInfo.photoURL || null,
-      isAnalyzing: false, status: 'READY', activeScan: null
+      isAnalyzing: false, status: 'READY', activeScan: null,
+      departmentId: currentDepartment?.id || 'default'
     });
     setNewProjectName(''); setIsNewProjectModalOpen(false); setCurrentProjectId(pid);
     setAppState('projectLanding'); setIsLandingExiting(false); setIsAuthorizedEntering(false);
@@ -501,6 +518,34 @@ const App = () => {
     if (!longPressedProject || !editProjectNameVal.trim()) return;
     await updateDoc(getPublicDoc('projects', longPressedProject.id), { name: editProjectNameVal.trim() });
     setIsEditProjectName(false); setLongPressedProject(null);
+  };
+
+  const handleDeptDragStart = (e, id) => setDraggedDeptId(id);
+  const handleDeptDragOver = (e, id) => { e.preventDefault(); setDragOverDeptId(id); };
+  const handleDeptDrop = async (e, targetId) => {
+    e.preventDefault(); setDragOverDeptId(null);
+    if (!draggedDeptId || draggedDeptId === targetId) return;
+    const newList = [...departments];
+    const fromIdx = newList.findIndex(d => d.id === draggedDeptId);
+    const toIdx = newList.findIndex(d => d.id === targetId);
+    if (fromIdx === -1 || toIdx === -1) return;
+    const [moved] = newList.splice(fromIdx, 1);
+    newList.splice(toIdx, 0, moved);
+    const updatedList = newList.map((d, i) => ({ ...d, order: i }));
+    await updateDoc(getPublicDoc('settings', 'departments'), { list: updatedList });
+    setDraggedDeptId(null);
+  };
+  const addDepartment = async () => {
+    if (!newDeptName.trim() || !user) return;
+    const newDept = { id: `dept_${Date.now()}`, name: newDeptName.trim(), order: departments.length };
+    await updateDoc(getPublicDoc('settings', 'departments'), { list: [...departments, newDept] });
+    setNewDeptName(''); setAdminErrorMsg('');
+  };
+  const deleteDepartment = async (id) => {
+    if (departments.length <= 1) { setAdminErrorMsg('최소 1개의 사업부는 유지해야 합니다.'); return; }
+    const updatedList = departments.filter(d => d.id !== id).map((d, i) => ({ ...d, order: i }));
+    await updateDoc(getPublicDoc('settings', 'departments'), { list: updatedList });
+    setAdminErrorMsg('');
   };
 
   const isProjectClosed = currentProjectData?.status === 'CLOSED';
@@ -896,13 +941,22 @@ const App = () => {
         <style>{styleSheet}</style>
         
         {/* 앱 설치 버튼 (뷰에서 항상 확인할 수 있도록 조건문 제거 및 z-index 추가) */}
-        <button 
-          onClick={handleInstallClick}
-          className="absolute top-6 right-6 md:top-8 md:right-8 px-5 py-2.5 bg-white/5 hover:bg-[#0066FF] border border-white/10 hover:border-[#0066FF] rounded-full flex items-center gap-2.5 text-xs font-black transition-all shadow-[0_4px_12px_rgba(0,0,0,0.1)] active:scale-95 group z-20"
-        >
-          <Download className="w-4 h-4 text-white/70 group-hover:text-white transition-colors animate-bounce" />
-          앱 설치하기
-        </button>
+        <div className="absolute top-6 right-6 md:top-8 md:right-8 flex items-center gap-3 z-20">
+          <button 
+            onClick={() => setIsAdminModalOpen(true)}
+            className="p-2.5 bg-white/5 hover:bg-[#0066FF] border border-white/10 hover:border-[#0066FF] rounded-full flex items-center justify-center transition-all shadow-[0_4px_12px_rgba(0,0,0,0.1)] active:scale-95 group"
+            title="사업부 관리"
+          >
+            <SettingsIcon className="w-4 h-4 text-white/70 group-hover:text-white transition-transform duration-500 group-hover:rotate-180" />
+          </button>
+          <button 
+            onClick={handleInstallClick}
+            className="px-5 py-2.5 bg-white/5 hover:bg-[#0066FF] border border-white/10 hover:border-[#0066FF] rounded-full flex items-center gap-2.5 text-xs font-black transition-all shadow-[0_4px_12px_rgba(0,0,0,0.1)] active:scale-95 group"
+          >
+            <Download className="w-4 h-4 text-white/70 group-hover:text-white transition-colors animate-bounce" />
+            앱 설치하기
+          </button>
+        </div>
 
         <div className="w-full max-w-xs space-y-6 z-10 relative">
           <h2 className="text-3xl font-black text-center mb-10 tracking-tight">Workspace Access</h2>
@@ -920,6 +974,44 @@ const App = () => {
             {isLoggingIn && <Loader2 className="w-5 h-5 animate-spin" />} {authMode === 'login' ? '워크스페이스 접속' : '계정 등록 및 시작'}
           </button>
         </div>
+
+        {/* --- Department Admin Modal --- */}
+        {isAdminModalOpen && (
+          <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-[#001224]/80 backdrop-blur-md animate-in fade-in duration-300">
+            <div className="bg-gradient-to-b from-[#001529] to-[#000b14] border border-white/10 w-full max-w-sm rounded-[2rem] shadow-[0_0_40px_rgba(0,102,255,0.15)] p-6 flex flex-col text-white relative overflow-hidden animate-in zoom-in-95 duration-300">
+              <div className="flex items-center justify-between mb-6 border-b pb-4 border-white/10">
+                <div>
+                  <h2 className="text-xl font-black uppercase tracking-tight text-white italic">Admin <span className="text-[#0066FF] not-italic">Config</span></h2>
+                  <p className="text-[9px] font-bold text-blue-300/50 uppercase tracking-widest mt-1">사업부 서버 목록 관리</p>
+                </div>
+                <button onClick={() => { setIsAdminModalOpen(false); setAdminErrorMsg(''); }} className="p-2 hover:bg-white/10 rounded-full text-white/40 hover:text-white transition-all"><X className="w-5 h-5" /></button>
+              </div>
+
+              <div className="flex gap-2 mb-4">
+                <input type="text" placeholder="새 사업부 추가" className="flex-1 px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-sm font-bold outline-none focus:border-[#0066FF] text-white" value={newDeptName} onChange={(e) => setNewDeptName(e.target.value)} onKeyPress={(e) => e.key === 'Enter' && addDepartment()} />
+                <button onClick={addDepartment} className="px-4 py-3 bg-[#0066FF] text-white rounded-xl font-bold text-sm shadow hover:bg-blue-500 transition-colors"><Plus className="w-5 h-5" /></button>
+              </div>
+              
+              {adminErrorMsg && <p className="text-rose-400 text-center text-xs font-bold mb-4">{adminErrorMsg}</p>}
+
+              <div className="space-y-2 overflow-y-auto max-h-60 pr-1">
+                {departments.map(dept => (
+                  <div 
+                    key={dept.id} 
+                    draggable 
+                    onDragStart={(e) => handleDeptDragStart(e, dept.id)} 
+                    onDragOver={(e) => handleDeptDragOver(e, dept.id)} 
+                    onDrop={(e) => handleDeptDrop(e, dept.id)} 
+                    className={`flex items-center justify-between px-4 py-3 bg-white/5 border rounded-xl cursor-grab active:cursor-grabbing transition-all ${dragOverDeptId === dept.id ? 'border-[#0066FF] bg-white/10' : 'border-white/10'}`}
+                  >
+                    <span className="text-sm font-bold text-white/90">{dept.name}</span>
+                    <button onClick={() => deleteDepartment(dept.id)} className="text-white/30 hover:text-rose-500 transition-colors"><Trash2 className="w-4 h-4" /></button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
@@ -937,9 +1029,45 @@ const App = () => {
             <input type="file" accept="image/*" className="hidden" onChange={handleProfileImageUpload} />
           </label>
           <div><h2 className="text-2xl font-black italic uppercase">Profile Photo</h2><p className="text-blue-200/50 text-xs font-bold uppercase tracking-widest mt-1">{manualInfo.displayName}님, 프로필 사진을 등록하세요</p></div>
-          <button onClick={async () => { if (manualInfo.memberId) await updateDoc(getPublicDoc('members', manualInfo.memberId), { photoURL: manualInfo.photoURL }); setAppState(prevAppState && prevAppState !== 'login' && prevAppState !== 'intro' ? prevAppState : 'projects'); }} className="w-full py-4 bg-[#0066FF] text-white rounded-2xl font-black text-sm active:scale-95 shadow-xl flex items-center justify-center gap-2 transition-all">
+          <button onClick={async () => { if (manualInfo.memberId) await updateDoc(getPublicDoc('members', manualInfo.memberId), { photoURL: manualInfo.photoURL }); setAppState(prevAppState && prevAppState !== 'login' && prevAppState !== 'intro' ? prevAppState : 'departmentSelect'); }} className="w-full py-4 bg-[#0066FF] text-white rounded-2xl font-black text-sm active:scale-95 shadow-xl flex items-center justify-center gap-2 transition-all">
             {manualInfo.photoURL ? '설정 완료' : '사진 없이 입장'} <ChevronRight className="w-4 h-4" />
           </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (appState === 'departmentSelect') {
+    return (
+      <div className="min-h-screen bg-[#001529] flex flex-col items-center justify-center p-6 text-white overflow-hidden font-sans relative anim-cinematic-enter">
+        <style>{styleSheet}</style>
+        <div className="absolute inset-0 bg-blue-500/5 blur-[120px] animate-pulse"></div>
+        <div className="relative z-10 w-full max-w-5xl flex flex-col items-center">
+          <h2 className="text-4xl md:text-5xl font-black text-center mb-2 tracking-tight uppercase italic drop-shadow-2xl">Select <span className="text-[#0066FF] not-italic">Server</span></h2>
+          <p className="text-blue-300/50 text-[10px] font-bold uppercase tracking-[0.3em] mb-16 text-center">입장할 사업부 서버를 선택하십시오</p>
+          
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6 w-full px-4">
+            {departments.map(dept => (
+              <button 
+                key={dept.id} 
+                onClick={() => { setCurrentDepartment(dept); setAppState('projects'); }} 
+                className="group relative p-8 bg-gradient-to-br from-white/5 to-white/[0.02] border border-white/10 rounded-[2rem] hover:bg-[#0066FF]/10 hover:border-[#0066FF]/50 transition-all duration-300 text-left overflow-hidden hover-cinematic-card shadow-xl active:scale-95 flex flex-col min-h-[160px]"
+              >
+                <div className="absolute top-0 right-0 w-32 h-32 bg-[#0066FF]/20 rounded-full blur-[50px] group-hover:bg-[#0066FF]/40 transition-all"></div>
+                <div className="flex justify-between items-start relative z-10 mb-auto">
+                  <div className="w-12 h-12 rounded-[1rem] bg-[#001224] border border-white/10 flex items-center justify-center group-hover:border-[#0066FF]/50 group-hover:bg-[#0066FF]/20 transition-all shadow-inner"><Building2 className="w-6 h-6 text-blue-400 group-hover:text-blue-300" /></div>
+                  <span className="text-[9px] px-2.5 py-1 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-full uppercase font-black tracking-widest flex items-center gap-1.5 shadow-sm"><div className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-pulse"></div> Online</span>
+                </div>
+                <div className="relative z-10 mt-6">
+                  <h3 className="text-2xl font-black text-white group-hover:text-blue-50 transition-colors uppercase tracking-tight">{dept.name}</h3>
+                  <div className="flex items-center gap-2 mt-2 opacity-50 group-hover:opacity-100 transition-opacity">
+                    <span className="text-[10px] text-blue-300 font-bold uppercase tracking-widest">Connect to Workspace</span>
+                    <ChevronRight className="w-3 h-3 text-blue-400 group-hover:translate-x-1 transition-transform" />
+                  </div>
+                </div>
+              </button>
+            ))}
+          </div>
         </div>
       </div>
     );
@@ -952,8 +1080,10 @@ const App = () => {
         <div className="relative z-10 flex flex-col min-h-screen p-8 md:p-16 max-w-[1400px] mx-auto w-full">
           <header className="mb-16 flex flex-col md:flex-row items-start md:items-center justify-between gap-8">
             <div className="space-y-4">
+              <button onClick={() => setAppState('departmentSelect')} className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-white/40 hover:text-blue-400 transition-colors mb-4"><ChevronLeft className="w-4 h-4" /> Change Server</button>
               <div className="inline-flex items-center gap-2 px-3 py-1 bg-white/5 border border-white/10 rounded-full"><Sparkles className="w-3 h-3 text-[#0066FF]" /><span className="text-[9px] font-black tracking-[0.2em] uppercase text-blue-300/80">Premium Workspace</span></div>
               <h1 className="text-5xl font-black tracking-tight text-white mb-2 italic uppercase">Team <span className="text-[#0066FF] not-italic">Boards</span></h1>
+              <p className="text-blue-300/60 font-bold tracking-[0.2em] text-xs uppercase">{currentDepartment?.name}</p>
             </div>
             <div className="flex items-center gap-4">
               <div className="relative">
@@ -982,7 +1112,7 @@ const App = () => {
               <span className="mt-3 text-[10px] font-black uppercase tracking-widest text-white/50 group-hover:text-white transition-colors">Add Project</span>
             </div>
 
-            {(projects || []).map(proj => {
+            {(projects || []).filter(p => !p.departmentId || p.departmentId === currentDepartment?.id).map(proj => {
               const projectMembers = (activeUsers || []).filter(u => u.currentProjectId === proj.id);
               return (
                 <div key={proj.id} draggable={true} onDragStart={(e) => handleDragStart(e, proj.id)} onDragOver={(e) => handleDragOver(e, proj.id)} onDrop={(e) => handleDrop(e, proj.id)} onDragEnd={handleDragEnd} onPointerDown={(e) => { if (e.button === 2) return; handlePressStart(proj.id); }} onPointerUp={handlePressEnd} onPointerLeave={handlePressEnd} onPointerCancel={handlePressEnd} onClick={() => handleProjectClick(proj.id)} style={{ WebkitUserSelect: 'none', userSelect: 'none', WebkitTouchCallout: 'none' }} className={`group relative bg-gradient-to-br from-white/[0.07] to-white/[0.01] rounded-[2rem] p-6 border border-white/10 shadow-2xl transition-all cursor-pointer ${dragOverProjectId === proj.id ? 'border-[#0066FF] bg-white/[0.1] scale-105' : 'hover-cinematic-card'} ${draggedProjectId === proj.id ? 'opacity-50' : ''}`}>
