@@ -224,6 +224,7 @@ const App = () => {
   const [isAuthorizedEntering, setIsAuthorizedEntering] = useState(false);
   const [isSavingReport, setIsSavingReport] = useState(false);
   const [showScrollTop, setShowScrollTop] = useState(false);
+  const [scanAbortController, setScanAbortController] = useState(null);
   
   // PWA 설치 관련 State
   const [deferredPrompt, setDeferredPrompt] = useState(null);
@@ -550,15 +551,33 @@ const App = () => {
 
   const isProjectClosed = currentProjectData?.status === 'CLOSED';
 
+  const handleScanButtonClick = () => {
+    if (isAnalyzing) {
+       if (scanAbortController) {
+          scanAbortController.abort();
+          setScanAbortController(null);
+       }
+       updateDoc(getPublicDoc('projects', currentProjectId), { isAnalyzing: false });
+    } else {
+       if (activeScan?.base64Image && activeScan?.image) {
+          analyzeScreenshot(activeScan.base64Image, activeScan.image);
+       }
+    }
+  };
+
   // --- API Analysis Logic (빌드 에러 및 흰화면 완벽 대응) ---
   const analyzeScreenshot = async (base64Data, imageSrc) => {
     if (!base64Data || !currentProjectId || !user || isProjectClosed) return;
     const projectRef = getPublicDoc('projects', currentProjectId);
     
+    const currentScan = currentProjectData?.activeScan || {};
     await updateDoc(projectRef, {
       isAnalyzing: true, status: 'IN PROGRESS',
-      activeScan: { image: imageSrc, base64Image: base64Data, title: '', description: '', category: appCategories[0] || '미분류', testObjects: [] }
+      activeScan: { ...currentScan, image: imageSrc, base64Image: base64Data, testObjects: [] }
     });
+
+    const abortController = new AbortController();
+    setScanAbortController(abortController);
 
     const dynamicTypes = objectTypes.join(' | ');
     const systemPrompt = `당신은 모바일 앱 QA 테스트 전문가입니다. 스크린샷을 분석하여 UI 오브젝트를 식별하십시오. 결과는 반드시 JSON 형식으로만 응답하십시오: { "objects": [ { "id": "unique_id", "type": "${dynamicTypes}", "label": "오브젝트 이름", "description": "위치 설명" } ] }`;
@@ -573,7 +592,12 @@ const App = () => {
         const aiModel = isCanvas ? 'gemini-2.5-flash-preview-09-2025' : 'gemini-2.5-flash';
         const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${aiModel}:generateContent?key=${apiKey}`;
 
-        const response = await fetch(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+        const response = await fetch(apiUrl, { 
+          method: 'POST', 
+          headers: { 'Content-Type': 'application/json' }, 
+          body: JSON.stringify(payload),
+          signal: abortController.signal
+        });
         if (!response.ok) {
           const errData = await response.json();
           throw new Error(errData.error?.message || "API 통신 실패");
@@ -593,6 +617,7 @@ const App = () => {
            return { ...obj, id: `auto_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`, status: 'PENDING', testCases: tcArray };
         });
       } catch (err) {
+        if (err.name === 'AbortError') throw err;
         if (attempt < 2 && !err.message.includes('API key')) { 
             await new Promise(r => setTimeout(r, Math.pow(2, attempt) * 1000)); return callApi(attempt + 1); 
         }
@@ -604,7 +629,13 @@ const App = () => {
       const results = await callApi();
       await updateDoc(projectRef, { 'activeScan.testObjects': results, isAnalyzing: false });
     } catch (err) {
-      await updateDoc(projectRef, { isAnalyzing: false, 'activeScan.title': '⚠️ 분석 실패', 'activeScan.description': '원인: ' + err.message });
+      if (err.name === 'AbortError') {
+         await updateDoc(projectRef, { isAnalyzing: false });
+      } else {
+         await updateDoc(projectRef, { isAnalyzing: false, 'activeScan.title': '⚠️ 분석 실패', 'activeScan.description': '원인: ' + err.message });
+      }
+    } finally {
+      setScanAbortController(null);
     }
   };
 
@@ -613,7 +644,24 @@ const App = () => {
     const file = e.target.files?.[0];
     if (file && file.type.startsWith('image/')) {
       const reader = new FileReader();
-      reader.onload = (event) => analyzeScreenshot(event.target.result.split(',')[1], event.target.result);
+      reader.onload = async (event) => {
+        const base64Data = event.target.result.split(',')[1];
+        const imageSrc = event.target.result;
+        const newScan = currentProjectData?.activeScan ? {
+          ...currentProjectData.activeScan,
+          image: imageSrc,
+          base64Image: base64Data,
+          testObjects: []
+        } : {
+          title: '', description: '', category: appCategories[0] || '미분류',
+          image: imageSrc, base64Image: base64Data, testObjects: []
+        };
+        
+        await updateDoc(getPublicDoc('projects', currentProjectId), {
+          activeScan: newScan,
+          isAnalyzing: false
+        });
+      };
       reader.readAsDataURL(file);
     }
   };
@@ -1589,12 +1637,22 @@ const App = () => {
             {/* --- Left Column: Viewfinder --- */}
             <div className="lg:col-span-5 flex flex-col gap-6">
               <div className="bg-white rounded-[2.5rem] shadow-2xl shadow-slate-200 border border-slate-200 overflow-hidden flex-1 flex flex-col min-h-[450px]">
-                <div className="p-6 border-b flex items-center justify-between bg-slate-50/50"><span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Viewfinder</span></div>
+                <div className="p-6 border-b flex items-center justify-between bg-slate-50/50">
+                  <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Viewfinder</span>
+                  {!isProjectClosed && activeScan?.image && (
+                    <button 
+                       onClick={handleScanButtonClick}
+                       className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${isAnalyzing ? 'bg-rose-500 text-white shadow-md hover:bg-rose-600' : 'bg-blue-500 text-white shadow-md hover:bg-blue-600'}`}
+                    >
+                       {isAnalyzing ? 'STOP SCAN' : (activeScan?.testObjects?.length > 0 ? 'RESCAN' : 'SCAN')}
+                    </button>
+                  )}
+                </div>
                 <div className="flex-1 flex items-center justify-center p-6 bg-slate-50/20 relative">
                   {!activeScan?.image ? (
                     <div onClick={() => !isProjectClosed && fileInputRef.current?.click()} className={`w-full h-full border-2 border-dashed border-slate-200 rounded-[2rem] flex flex-col items-center justify-center gap-6 transition-all p-8 ${isProjectClosed ? 'opacity-50 cursor-not-allowed bg-slate-50' : 'cursor-pointer hover:bg-white hover:border-[#0066FF] group'}`}>
                       <div className="w-20 h-20 bg-blue-50 text-blue-500 rounded-[1.5rem] flex items-center justify-center group-hover:scale-110 transition-all"><Upload /></div>
-                      <div className="text-center"><p className="font-black text-slate-800 uppercase tracking-tight">{isProjectClosed ? 'Project Closed' : 'Upload Screenshot'}</p><p className="text-[11px] text-slate-400 mt-2 font-bold uppercase tracking-widest leading-relaxed">{isProjectClosed ? '더 이상 스크린샷을 업로드할 수 없습니다' : '이미지를 업로드하면 실시간 분석을 시작합니다'}</p></div>
+                      <div className="text-center"><p className="font-black text-slate-800 uppercase tracking-tight">{isProjectClosed ? 'Project Closed' : 'Upload Screenshot'}</p><p className="text-[11px] text-slate-400 mt-2 font-bold uppercase tracking-widest leading-relaxed">{isProjectClosed ? '더 이상 스크린샷을 업로드할 수 없습니다' : '이미지를 업로드하고 분석을 시작하세요'}</p></div>
                       <input type="file" ref={fileInputRef} onChange={handleFileChange} accept="image/*" className="hidden" disabled={isAnalyzing || isProjectClosed} />
                     </div>
                   ) : (
