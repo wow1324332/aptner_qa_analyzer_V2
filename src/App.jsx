@@ -29,6 +29,12 @@ const isCanvas = typeof __firebase_config !== 'undefined';
 const canvasAppId = typeof __app_id !== 'undefined' ? String(__app_id).replace(/\//g, '-') : 'default-app-id';
 const apiKey = isCanvas ? "" : (getEnv('GEMINI') || "");
 
+// 초기 렌더링 시 흰 화면 번쩍임(White Flash) 방지
+if (typeof document !== 'undefined') {
+  document.documentElement.style.backgroundColor = '#001529';
+  document.body.style.backgroundColor = '#001529';
+}
+
 // 흰 화면 방지: Firebase 설정 파싱 중 에러 발생 시 앱 크래시 방지
 let firebaseConfig;
 try {
@@ -233,6 +239,22 @@ const App = () => {
   
   const mainScrollRef = useRef(null);
   const consoleScrollRef = useRef(null);
+
+  // --- Body Background Color Sync ---
+  useEffect(() => {
+    if (typeof document !== 'undefined') {
+      if (appState === 'projects') {
+        document.documentElement.style.backgroundColor = '#001224';
+        document.body.style.backgroundColor = '#001224';
+      } else if (appState === 'authorized') {
+        document.documentElement.style.backgroundColor = '#F8FAFC';
+        document.body.style.backgroundColor = '#F8FAFC';
+      } else {
+        document.documentElement.style.backgroundColor = '#001529';
+        document.body.style.backgroundColor = '#001529';
+      }
+    }
+  }, [appState]);
 
   const handleScroll = () => {
     const mainTop = mainScrollRef.current?.scrollTop || 0;
@@ -982,7 +1004,7 @@ const App = () => {
           <div className="bg-white/10 p-5 rounded-[2.5rem] border border-white/20 backdrop-blur-xl mb-6 shadow-2xl relative z-10"><Building2 className="w-16 h-16 text-[#0066FF]" /></div>
         </div>
         <div className="text-center mb-12">
-          <h1 className="text-4xl font-black tracking-tight mb-3 italic"><span className="text-[#0066FF] not-italic">APTNER</span> <span className="text-white opacity-90">QA PRO</span></h1>
+          <h1 className="text-6xl font-black tracking-tight mb-3 italic"><span className="text-[#0066FF] not-italic">Testai</span> <span className="text-white opacity-90">Pro</span></h1>
           <p className="text-blue-300 font-bold tracking-[0.4em] text-[10px] uppercase">Collaborative UI Testing System</p>
         </div>
         <div className="w-72 h-1.5 bg-white/5 rounded-full overflow-hidden mb-5 border border-white/10"><div className="h-full bg-gradient-to-r from-[#0066FF] to-[#00CCFF] transition-all duration-300" style={{ width: `${introProgress}%` }} /></div>
