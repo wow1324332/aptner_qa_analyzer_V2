@@ -1004,7 +1004,7 @@ const App = () => {
           <div className="bg-white/10 p-5 rounded-[2.5rem] border border-white/20 backdrop-blur-xl mb-6 shadow-2xl relative z-10"><Building2 className="w-16 h-16 text-[#0066FF]" /></div>
         </div>
         <div className="text-center mb-12">
-          <h1 className="text-6xl font-black tracking-tight mb-3 italic"><span className="text-[#0066FF] not-italic">Testai</span> <span className="text-white opacity-90">Pro</span></h1>
+          <h1 className="text-6xl font-black tracking-tight mb-3 italic"><span className="bg-gradient-to-r from-[#0066FF] to-white bg-clip-text text-transparent not-italic">Testai</span> <span className="text-white opacity-90">Pro</span></h1>
           <p className="text-blue-300 font-bold tracking-[0.4em] text-[10px] uppercase">Collaborative UI Testing System</p>
         </div>
         <div className="w-72 h-1.5 bg-white/5 rounded-full overflow-hidden mb-5 border border-white/10"><div className="h-full bg-gradient-to-r from-[#0066FF] to-[#00CCFF] transition-all duration-300" style={{ width: `${introProgress}%` }} /></div>
