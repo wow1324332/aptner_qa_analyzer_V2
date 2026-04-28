@@ -1069,8 +1069,8 @@ const App = () => {
       <div className="min-h-screen bg-[#001529] flex flex-col items-center justify-center p-6 text-white font-sans text-center">
         <style>{styleSheet}</style>
         <div className="max-w-xs w-full space-y-8">
-          <label className="cursor-pointer inline-block group relative">
-            <div className="w-24 h-24 bg-blue-500/20 rounded-[2rem] border border-blue-500/30 flex items-center justify-center mx-auto overflow-hidden shadow-xl transition-all group-hover:border-blue-400">
+          <label className="cursor-pointer inline-block group">
+            <div className="w-24 h-24 bg-blue-500/20 rounded-[2rem] border border-blue-500/30 flex items-center justify-center mx-auto overflow-hidden shadow-xl transition-all group-hover:border-blue-400 relative">
               {manualInfo.photoURL ? <img src={manualInfo.photoURL} alt="Profile" className="w-full h-full object-cover" /> : <Camera className="w-8 h-8 text-blue-400" />}
               <div className="absolute inset-0 bg-black/60 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"><span className="text-[10px] font-bold text-white uppercase tracking-widest">업로드</span></div>
             </div>
@@ -1160,7 +1160,7 @@ const App = () => {
               <span className="mt-3 text-[10px] font-black uppercase tracking-widest text-white/50 group-hover:text-white transition-colors">Add Project</span>
             </div>
 
-            {(projects || []).filter(p => !p.departmentId || p.departmentId === currentDepartment?.id).map(proj => {
+            {(projects || []).filter(p => (p.departmentId || 'default') === (currentDepartment?.id || 'default')).map(proj => {
               const projectMembers = (activeUsers || []).filter(u => u.currentProjectId === proj.id);
               return (
                 <div key={proj.id} draggable={true} onDragStart={(e) => handleDragStart(e, proj.id)} onDragOver={(e) => handleDragOver(e, proj.id)} onDrop={(e) => handleDrop(e, proj.id)} onDragEnd={handleDragEnd} onPointerDown={(e) => { if (e.button === 2) return; handlePressStart(proj.id); }} onPointerUp={handlePressEnd} onPointerLeave={handlePressEnd} onPointerCancel={handlePressEnd} onClick={() => handleProjectClick(proj.id)} style={{ WebkitUserSelect: 'none', userSelect: 'none', WebkitTouchCallout: 'none' }} className={`group relative bg-gradient-to-br from-white/[0.07] to-white/[0.01] rounded-[2rem] p-6 border border-white/10 shadow-2xl transition-all cursor-pointer ${dragOverProjectId === proj.id ? 'border-[#0066FF] bg-white/[0.1] scale-105' : 'hover-cinematic-card'} ${draggedProjectId === proj.id ? 'opacity-50' : ''}`}>
