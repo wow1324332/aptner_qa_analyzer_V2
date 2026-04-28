@@ -144,7 +144,7 @@ const App = () => {
   const fileInputRef = useRef(null);
   const categoryDropdownRef = useRef(null);
   const addTypeDropdownRef = useRef(null);
-  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+  const [isHistoryOpen, setIsHistoryOpen] = useState(true);
   const [selectedHistoryItem, setSelectedHistoryItem] = useState(null);
   const [selectedFolder, setSelectedFolder] = useState(null);
   const [newProjectName, setNewProjectName] = useState('');
@@ -152,6 +152,7 @@ const App = () => {
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const [isCategoryDropdownOpen, setIsCategoryDropdownOpen] = useState(false);
   const [isAddTypeDropdownOpen, setIsAddTypeDropdownOpen] = useState(false);
+  const [expandedHistoryGroups, setExpandedHistoryGroups] = useState([]);
   
   const [appCategories, setAppCategories] = useState(['미분류', '홈화면', '결제', '등록', '커뮤니티']);
   const [isCatModalOpen, setIsCatModalOpen] = useState(false);
@@ -569,13 +570,13 @@ const App = () => {
   const handleScanButtonClick = () => {
     if (isAnalyzing) {
        if (scanAbortController) {
-          scanAbortController.abort();
-          setScanAbortController(null);
+         scanAbortController.abort();
+         setScanAbortController(null);
        }
        updateDoc(getPublicDoc('projects', currentProjectId), { isAnalyzing: false });
     } else {
        if (activeScan?.base64Image && activeScan?.image) {
-          analyzeScreenshot(activeScan.base64Image, activeScan.image);
+         analyzeScreenshot(activeScan.base64Image, activeScan.image);
        }
     }
   };
@@ -598,7 +599,7 @@ const App = () => {
     const systemPrompt = `당신은 모바일 앱 QA 테스트 전문가입니다. 스크린샷을 분석하여 UI 오브젝트를 식별하십시오. 결과는 반드시 JSON 형식으로만 응답하십시오: { "objects": [ { "id": "unique_id", "type": "${dynamicTypes}", "label": "오브젝트 이름", "description": "위치 설명" } ] }`;
     
     const baseText = "이 앱 스크린샷에서 테스트 가능한 모든 UI 요소를 찾아 리스트로 정리해줘.";
-    const conditionText = scanConditions.trim() ? `\n다음 추가 조건 및 지시사항을 반드시 엄격하게 준수할 것: ${scanConditions}` : "";
+    const conditionText = scanConditions.trim() ? `\n다음 추가 조건 및 지시사항을 반드시 엄격하게 준수할 파트: ${scanConditions}` : "";
     const combinedText = baseText + conditionText;
 
     const payload = {
@@ -895,6 +896,10 @@ const App = () => {
      setSelectedHistoryItem(null);
   };
 
+  const toggleHistoryGroup = (cat) => {
+     setExpandedHistoryGroups(prev => prev.includes(cat) ? prev.filter(c => c !== cat) : [...prev, cat]);
+  };
+
   // --- Group Logic ---
   const handleGroupPressStart = (cat) => {
     isGroupLongPressTriggeredRef.current = false;
@@ -1054,7 +1059,7 @@ const App = () => {
                   <p className="text-[9px] font-bold text-blue-300/50 uppercase tracking-widest mt-1">사업부 서버 목록 관리</p>
                 </div>
                 <button onClick={() => { setIsAdminModalOpen(false); setAdminErrorMsg(''); }} className="p-2 hover:bg-white/10 rounded-full text-white/40 hover:text-white transition-all"><X className="w-5 h-5" /></button>
-              </div>
+                </div>
 
               <div className="flex gap-2 mb-4">
                 <input type="text" placeholder="새 사업부 추가" className="flex-1 px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-sm font-bold outline-none focus:border-[#0066FF] text-white" value={newDeptName} onChange={(e) => setNewDeptName(e.target.value)} onKeyPress={(e) => e.key === 'Enter' && addDepartment()} />
@@ -1165,7 +1170,7 @@ const App = () => {
                       <span className="text-[8px] font-black text-blue-400 uppercase tracking-widest leading-none mb-1">ID: {manualInfo.memberId}</span><span className="text-sm font-black tracking-tight text-white truncate w-full">{currentUserDisplayName}</span>
                     </div>
                     <button onClick={() => { setIsUserMenuOpen(false); handleLogout(); }} className="w-full px-4 py-3 flex items-center justify-between text-white/50 hover:text-rose-400 hover:bg-rose-500/10 transition-all text-xs font-bold">로그아웃 <LogOut className="w-3.5 h-3.5" /></button>
-                  </div>
+                    </div>
                 )}
               </div>
               <div className="flex items-center gap-2.5 bg-gradient-to-r from-white/10 to-transparent backdrop-blur-md border border-white/20 px-4 py-2 rounded-full shadow-[0_0_15px_rgba(0,102,255,0.2)]">
@@ -1288,7 +1293,7 @@ const App = () => {
 
   // --- Main Editor UI ---
   return (
-    <div className={`min-h-screen bg-[#F8FAFC] text-slate-900 font-sans flex overflow-hidden ${isAuthorizedEntering ? 'anim-cinematic-enter' : ''}`}>
+    <div className={`h-screen w-full bg-[#F8FAFC] text-slate-900 font-sans flex overflow-hidden ${isAuthorizedEntering ? 'anim-cinematic-enter' : ''}`}>
       <style>{styleSheet}</style>
 
       {/* 설정/모달 부분들 (전체 복구) */}
@@ -1428,57 +1433,92 @@ const App = () => {
         </div>
       )}
 
-      {/* --- 아카이브 사이드바 --- */}
-      {isHistoryOpen && <div className="fixed inset-0 z-[45] bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-300" onClick={() => setIsHistoryOpen(false)} />}
-      <aside className={`fixed inset-y-0 left-0 z-50 w-80 bg-[#001529] text-white transition-transform duration-500 transform ${isHistoryOpen ? 'translate-x-0' : '-translate-x-full'} shadow-2xl rounded-r-2xl`}>
-        <div className="flex flex-col h-full p-6">
-          <div className="flex items-center justify-between mb-8 pb-6 border-b border-white/10">
-            <h2 className="font-black text-sm uppercase tracking-widest">Archive</h2>
-            <button onClick={() => setIsHistoryOpen(false)} className="p-2 hover:bg-white/5 rounded-lg"><X /></button>
-          </div>
-          <div className="flex-1 overflow-y-auto space-y-4 pr-2">
-             {(displayGroups || []).length === 0 ? (
-                <p className="text-xs text-white/40 text-center mt-10">저장된 아카이브가 없습니다.</p>
-             ) : (
-                (displayGroups || []).map(cat => {
-                  const groupStats = (groupedHistory[cat] || []).reduce((acc, item) => {
-                     acc.pass += (item.stats?.pass || 0);
-                     acc.fail += (item.stats?.fail || 0);
-                     return acc;
-                  }, { pass: 0, fail: 0 });
+      {/* --- 고정형 아카이브 사이드바 --- */}
+      <div className={`relative shrink-0 h-screen transition-all duration-500 ease-[cubic-bezier(0.25,1,0.5,1)] z-40 ${isHistoryOpen ? 'w-80' : 'w-0'}`}>
+         <aside className="absolute inset-0 bg-[#001529] text-white shadow-[4px_0_24px_rgba(0,0,0,0.15)] overflow-hidden flex flex-col">
+            <div className="w-80 h-full flex flex-col p-6">
+               <div className="flex items-center justify-between mb-8 pb-6 border-b border-white/10">
+                  <h2 className="font-black text-sm uppercase tracking-widest">Archive</h2>
+                  <button onClick={() => setIsHistoryOpen(false)} className="relative p-2 rounded-xl group transition-all border border-white/5 bg-white/5 hover:bg-[#0066FF]/20 hover:border-[#0066FF]/50 hover:shadow-[0_0_15px_rgba(0,102,255,0.4)] cursor-pointer">
+                     <ChevronLeft className="w-4 h-4 text-white/50 group-hover:text-blue-300 transition-colors" />
+                  </button>
+               </div>
+               <div className="flex-1 overflow-y-auto space-y-4 pr-2 scrollbar-hide">
+                  {(displayGroups || []).length === 0 ? (
+                     <p className="text-xs text-white/40 text-center mt-10">저장된 아카이브가 없습니다.</p>
+                  ) : (
+                     (displayGroups || []).map(cat => {
+                       const groupStats = (groupedHistory[cat] || []).reduce((acc, item) => {
+                          acc.pass += (item.stats?.pass || 0);
+                          acc.fail += (item.stats?.fail || 0);
+                          return acc;
+                       }, { pass: 0, fail: 0 });
 
-                  return (
-                  <div key={cat} 
-                       draggable={true} onDragStart={(e) => handleGroupDragStart(e, cat)} onDragOver={(e) => handleGroupDragOver(e, cat)} onDrop={(e) => handleGroupDrop(e, cat)} onDragEnd={handleGroupDragEnd} onPointerDown={(e) => { if (e.button === 2) return; handleGroupPressStart(cat); }} onPointerUp={handleGroupPressEnd} onPointerLeave={handleGroupPressEnd} onPointerCancel={handleGroupPressEnd} onClick={() => handleGroupClick(cat)}
-                       style={{ WebkitUserSelect: 'none', userSelect: 'none', WebkitTouchCallout: 'none' }}
-                       className={`group p-4 bg-gradient-to-br from-white/[0.08] to-transparent border border-white/10 rounded-2xl cursor-pointer transition-all flex items-center gap-4 relative ${dragOverGroupCat === cat ? 'border-[#0066FF] bg-white/[0.1] scale-105' : 'hover:bg-[#0066FF]/20 hover:border-[#0066FF]/50 shadow-lg'} ${draggedGroupCat === cat ? 'opacity-50' : ''}`}
-                  >
-                     {showActionsGroupCat === cat && (
-                        <div className="absolute top-2 right-2 flex items-center gap-1.5 z-20 animate-in fade-in zoom-in duration-200">
-                           <button onClick={(e) => { e.stopPropagation(); setEditGroupOldName(cat); setEditGroupNewName(cat); setIsEditGroupModalOpen(true); setShowActionsGroupCat(null); }} className="p-1.5 bg-blue-500 hover:bg-blue-400 text-white rounded-full shadow-xl transition-all"><Edit2 className="w-3 h-3" /></button>
-                           <button onClick={(e) => confirmDeleteGroup(e, cat)} className="p-1.5 bg-rose-500 hover:bg-rose-400 text-white rounded-full shadow-xl transition-all"><Trash2 className="w-3 h-3" /></button>
-                        </div>
-                     )}
-                     <div className="w-12 h-12 bg-gradient-to-tr from-blue-600 to-blue-400 rounded-xl flex items-center justify-center group-hover:scale-105 transition-transform shadow-[0_4px_12px_rgba(37,99,235,0.4)] relative shrink-0">
-                        <div className="absolute inset-0 bg-white/20 rounded-xl blur-sm opacity-0 group-hover:opacity-100 transition-opacity"></div>
-                        <Folder className="w-6 h-6 text-white relative z-10" />
-                     </div>
-                     <div className="flex-1 min-w-0 pr-6">
-                        <p className="text-sm font-black text-white truncate uppercase tracking-tight">{cat}</p>
-                        <p className="text-[10px] text-white/40 font-bold uppercase tracking-widest">{(groupedHistory[cat] || []).length} Reports</p>
-                        <div className="flex gap-1.5 mt-1.5">
-                           <span className="text-[8px] font-black px-1.5 py-0.5 bg-emerald-500/20 text-emerald-400 rounded border border-emerald-500/30 uppercase tracking-tighter">{groupStats.pass} Pass</span>
-                           <span className="text-[8px] font-black px-1.5 py-0.5 bg-rose-500/20 text-rose-400 rounded border border-rose-500/30 uppercase tracking-tighter">{groupStats.fail} Fail</span>
-                        </div>
-                     </div>
-                     {!showActionsGroupCat && <ChevronRight className="w-4 h-4 text-white/20 group-hover:text-white transition-colors absolute right-4" />}
-                  </div>
-                  );
-                })
-             )}
-          </div>
-        </div>
-      </aside>
+                       return (
+                       <div key={cat} className="flex flex-col gap-2">
+                          <div 
+                               draggable={true} onDragStart={(e) => handleGroupDragStart(e, cat)} onDragOver={(e) => handleGroupDragOver(e, cat)} onDrop={(e) => handleGroupDrop(e, cat)} onDragEnd={handleGroupDragEnd} onPointerDown={(e) => { if (e.button === 2) return; handleGroupPressStart(cat); }} onPointerUp={handleGroupPressEnd} onPointerLeave={handleGroupPressEnd} onPointerCancel={handleGroupPressEnd} onClick={() => handleGroupClick(cat)}
+                               style={{ WebkitUserSelect: 'none', userSelect: 'none', WebkitTouchCallout: 'none' }}
+                               className={`group p-4 bg-gradient-to-br from-white/[0.08] to-transparent border border-white/10 rounded-2xl cursor-pointer transition-all flex items-center gap-4 relative ${dragOverGroupCat === cat ? 'border-[#0066FF] bg-white/[0.1] scale-105' : 'hover:bg-[#0066FF]/20 hover:border-[#0066FF]/50 shadow-lg'} ${draggedGroupCat === cat ? 'opacity-50' : ''}`}
+                          >
+                             {showActionsGroupCat === cat && (
+                                <div className="absolute top-2 right-2 flex items-center gap-1.5 z-20 animate-in fade-in zoom-in duration-200">
+                                   <button onClick={(e) => { e.stopPropagation(); setEditGroupOldName(cat); setEditGroupNewName(cat); setIsEditGroupModalOpen(true); setShowActionsGroupCat(null); }} className="p-1.5 bg-blue-500 hover:bg-blue-400 text-white rounded-full shadow-xl transition-all"><Edit2 className="w-3 h-3" /></button>
+                                   <button onClick={(e) => confirmDeleteGroup(e, cat)} className="p-1.5 bg-rose-500 hover:bg-rose-400 text-white rounded-full shadow-xl transition-all"><Trash2 className="w-3 h-3" /></button>
+                                </div>
+                             )}
+                             <div className="w-12 h-12 bg-gradient-to-tr from-blue-600 to-blue-400 rounded-xl flex items-center justify-center group-hover:scale-105 transition-transform shadow-[0_4px_12px_rgba(37,99,235,0.4)] relative shrink-0">
+                                <div className="absolute inset-0 bg-white/20 rounded-xl blur-sm opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                                <Folder className="w-6 h-6 text-white relative z-10" />
+                             </div>
+                             <div className="flex-1 min-w-0 pr-6">
+                                <p className="text-sm font-black text-white truncate uppercase tracking-tight">{cat}</p>
+                                <p className="text-[10px] text-white/40 font-bold uppercase tracking-widest">{(groupedHistory[cat] || []).length} Reports</p>
+                                <div className="flex gap-1.5 mt-1.5">
+                                   <span className="text-[8px] font-black px-1.5 py-0.5 bg-emerald-500/20 text-emerald-400 rounded border border-emerald-500/30 uppercase tracking-tighter">{groupStats.pass} Pass</span>
+                                   <span className="text-[8px] font-black px-1.5 py-0.5 bg-rose-500/20 text-rose-400 rounded border border-rose-500/30 uppercase tracking-tighter">{groupStats.fail} Fail</span>
+                                </div>
+                             </div>
+                             {!showActionsGroupCat && (
+                                <button onClick={(e) => { e.stopPropagation(); toggleHistoryGroup(cat); }} className="absolute right-4 p-2 z-10 hover:bg-white/10 rounded-full transition-colors flex items-center justify-center cursor-pointer">
+                                   <ChevronRight className={`w-4 h-4 transition-transform duration-300 ${expandedHistoryGroups.includes(cat) ? 'rotate-90 text-white' : 'text-white/20 group-hover:text-white'}`} />
+                                </button>
+                             )}
+                          </div>
+                          
+                          <div className={`grid transition-all duration-500 ease-[cubic-bezier(0.25,1,0.5,1)] ${expandedHistoryGroups.includes(cat) ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'}`}>
+                             <div className="overflow-hidden">
+                                <div className="pl-4 pr-2 py-2 space-y-2 border-l border-white/10 ml-6 mt-1 mb-2">
+                                   {(groupedHistory[cat] || []).map(item => (
+                                      <div key={item.id} onClick={() => setSelectedHistoryItem(item)} className="p-3 bg-white/5 hover:bg-white/10 rounded-xl cursor-pointer transition-colors border border-white/5 flex flex-col gap-1.5 shadow-sm hover:shadow-md group/item">
+                                         <p className="text-[11px] font-black text-white/90 truncate group-hover/item:text-blue-400 transition-colors" title={item.title}>{item.title}</p>
+                                         <div className="flex gap-1.5">
+                                            <span className="text-[8px] font-black px-1.5 py-0.5 bg-emerald-500/20 text-emerald-400 rounded uppercase tracking-tighter">Pass {item.stats?.pass || 0}</span>
+                                            <span className="text-[8px] font-black px-1.5 py-0.5 bg-rose-500/20 text-rose-400 rounded uppercase tracking-tighter">Fail {item.stats?.fail || 0}</span>
+                                         </div>
+                                      </div>
+                                   ))}
+                                </div>
+                             </div>
+                          </div>
+                       </div>
+                       );
+                     })
+                  )}
+               </div>
+            </div>
+         </aside>
+         
+         {!isHistoryOpen && (
+            <button 
+               onClick={() => setIsHistoryOpen(true)}
+               className="absolute top-1/2 left-full -translate-y-1/2 w-6 h-16 bg-[#001529] text-white/50 hover:text-white rounded-r-xl border border-l-0 border-white/10 shadow-[4px_0_15px_rgba(0,0,0,0.3)] hover:bg-[#0066FF]/90 hover:border-[#0066FF] transition-all z-50 flex items-center justify-center group cursor-pointer"
+               title="Open Archive"
+            >
+               <ChevronRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" />
+            </button>
+         )}
+      </div>
 
       {/* --- 폴더 아카이브 팝업 --- */}
       {selectedFolder && (
@@ -1649,7 +1689,6 @@ const App = () => {
                 )}
               </div>
 
-              <button onClick={() => setIsHistoryOpen(true)} className="px-5 py-3 bg-[#001529] text-white rounded-xl shadow-lg font-black text-xs uppercase tracking-widest hover:bg-slate-800 active:scale-95 transition-all">Archive</button>
               {!isProjectClosed && activeScan?.image && <button onClick={saveCurrentToHistory} disabled={!(scanMetaForm.title || '').trim()} className="px-6 py-3 bg-emerald-500 text-white rounded-xl shadow-lg font-black text-xs uppercase tracking-widest hover:bg-emerald-600 active:scale-95 transition-all disabled:opacity-30">Save Report</button>}
             </div>
           </header>
@@ -1673,7 +1712,7 @@ const App = () => {
                   {!activeScan?.image ? (
                     <div onClick={() => !isProjectClosed && fileInputRef.current?.click()} className={`w-full h-full border-2 border-dashed border-slate-200 rounded-[2rem] flex flex-col items-center justify-center gap-6 transition-all p-8 ${isProjectClosed ? 'opacity-50 cursor-not-allowed bg-slate-50' : 'cursor-pointer hover:bg-white hover:border-[#0066FF] group'}`}>
                       <div className="w-20 h-20 bg-blue-50 text-blue-500 rounded-[1.5rem] flex items-center justify-center group-hover:scale-110 transition-all"><Upload /></div>
-                      <div className="text-center"><p className="font-black text-slate-800 uppercase tracking-tight">{isProjectClosed ? 'Project Closed' : 'Upload Screenshot'}</p><p className="text-[11px] text-slate-400 mt-2 font-bold uppercase tracking-widest leading-relaxed">{isProjectClosed ? '더 이상 스크린샷을 업로드할 수 없습니다' : '이미지를 업로드하고 분석을 시작하세요'}</p></div>
+                      <div className="text-center"><p className="font-black text-slate-800 uppercase tracking-tight">{isProjectClosed ? 'Project Closed' : 'Upload Screenshot'}</p><p className="text-[11px] text-slate-400 mt-2 font-bold uppercase tracking-widest leading-relaxed">{isProjectClosed ? '더 이상 스크린샷을 업로드할 수 정할 수 없습니다' : '이미지를 업로드하고 분석을 시작하세요'}</p></div>
                       <input type="file" ref={fileInputRef} onChange={handleFileChange} accept="image/*" className="hidden" disabled={isAnalyzing || isProjectClosed} />
                     </div>
                   ) : (
