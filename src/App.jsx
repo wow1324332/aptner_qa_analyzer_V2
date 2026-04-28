@@ -74,30 +74,20 @@ const styleSheet = `
   50% { box-shadow: 0 0 25px rgba(0, 102, 255, 0.7); }
 }
 @keyframes projectEntry {
-  0% { transform: scale(0.9); opacity: 0; filter: blur(10px); }
-  100% { transform: scale(1); opacity: 1; filter: blur(0); }
+  0% { transform: scale(0.95); opacity: 0; }
+  100% { transform: scale(1); opacity: 1; }
 }
 @keyframes lineGrow {
   0% { width: 0; }
   100% { width: 100%; }
 }
 @keyframes screenDissolveToLeft {
-  0% { transform: translateX(0) scale(1); filter: blur(0px) brightness(1); opacity: 1; }
-  40% { transform: translateX(-4vw) scale(0.98); filter: blur(3px) brightness(1.5); opacity: 0.9; }
-  100% { transform: translateX(-20vw) scale(0.92); filter: blur(25px) brightness(2.5); opacity: 0; }
-}
-@keyframes maskWipeLeft {
-  0% { -webkit-mask-position: 100% 0; mask-position: 100% 0; }
-  100% { -webkit-mask-position: 0% 0; mask-position: 0% 0; }
+  0% { transform: translateX(0) scale(1); opacity: 1; }
+  100% { transform: translateX(-15vw) scale(0.95); opacity: 0; }
 }
 .anim-particle-exit {
-  -webkit-mask-image: linear-gradient(to left, rgba(0,0,0,1) 30%, rgba(0,0,0,0) 70%);
-  -webkit-mask-size: 300% 100%;
-  -webkit-mask-position: 100% 0;
-  mask-image: linear-gradient(to left, rgba(0,0,0,1) 30%, rgba(0,0,0,0) 70%);
-  mask-size: 300% 100%;
-  mask-position: 100% 0;
-  animation: screenDissolveToLeft 1.2s cubic-bezier(0.3, 0, 0.2, 1) forwards, maskWipeLeft 1.2s cubic-bezier(0.3, 0, 0.2, 1) forwards;
+  animation: screenDissolveToLeft 1s cubic-bezier(0.3, 0, 0.2, 1) forwards;
+  will-change: transform, opacity;
 }
 @keyframes cinematicRevealLeft {
   0% { transform: translateX(15vw) scale(1.05); opacity: 0; filter: blur(20px) saturate(0); }
@@ -232,7 +222,7 @@ const App = () => {
   const [showScrollTop, setShowScrollTop] = useState(false);
   const [scanAbortController, setScanAbortController] = useState(null);
   const [scanConditions, setScanConditions] = useState('');
-  
+  const [transitionalProjectName, setTransitionalProjectName] = useState('');
   // PWA 설치 관련 State
   const [deferredPrompt, setDeferredPrompt] = useState(null);
   const [isInstallable, setIsInstallable] = useState(false);
@@ -499,8 +489,10 @@ const App = () => {
   const createNewProject = async () => {
     if (!newProjectName.trim() || !user) return;
     const pid = `proj_${Date.now()}`;
+    const projName = newProjectName.trim();
+    setTransitionalProjectName(projName);
     await setDoc(getPublicDoc('projects', pid), {
-      name: newProjectName.trim(), createdAt: Date.now(), order: Date.now(),
+      name: projName, createdAt: Date.now(), order: Date.now(),
       createdBy: manualInfo.memberId || user.uid, createdByName: manualInfo.displayName || "GUEST", createdByPhoto: manualInfo.photoURL || null,
       isAnalyzing: false, status: 'READY', activeScan: null,
       departmentId: currentDepartment?.id || 'default'
@@ -1277,11 +1269,11 @@ const App = () => {
       <div className={`min-h-screen bg-[#001529] flex flex-col items-center justify-center p-6 text-white overflow-hidden relative font-sans ${isLandingExiting ? 'anim-particle-exit' : ''}`}>
         <style>{styleSheet}</style>
         <div className="absolute inset-0 bg-blue-500/5 blur-[120px] animate-pulse"></div>
-        <div className="relative z-10 flex flex-col items-center text-center space-y-12 max-w-4xl w-full px-10 animate-[projectEntry_0.8s_ease-out]">
+        <div className="relative z-10 flex flex-col items-center text-center space-y-12 max-w-4xl w-full px-10 animate-[projectEntry_0.8s_ease-out]" style={{ willChange: 'transform, opacity' }}>
            <div className="w-24 h-24 bg-white/10 rounded-[2.5rem] border border-white/20 flex items-center justify-center shadow-2xl backdrop-blur-2xl mb-2"><Layers className="w-10 h-10 text-blue-400" /></div>
            <div className="space-y-4 w-full">
               <h2 className="text-[10px] font-black uppercase tracking-[0.4em] text-blue-400">Workspace Init...</h2>
-              <h1 className="text-4xl md:text-5xl font-black italic uppercase tracking-tight text-white leading-tight break-words line-clamp-4">{currentProjectData?.name}</h1>
+              <h1 className="text-4xl md:text-5xl font-black italic uppercase tracking-tight text-white leading-tight break-words line-clamp-4">{currentProjectData?.name || transitionalProjectName}</h1>
            </div>
            <div className="w-64 space-y-4">
               <div className="h-0.5 w-full bg-white/5 rounded-full overflow-hidden border border-white/5">
