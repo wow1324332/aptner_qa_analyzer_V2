@@ -225,6 +225,7 @@ const App = () => {
   const [isSavingReport, setIsSavingReport] = useState(false);
   const [showScrollTop, setShowScrollTop] = useState(false);
   const [scanAbortController, setScanAbortController] = useState(null);
+  const [scanConditions, setScanConditions] = useState('');
   
   // PWA 설치 관련 State
   const [deferredPrompt, setDeferredPrompt] = useState(null);
@@ -581,8 +582,13 @@ const App = () => {
 
     const dynamicTypes = objectTypes.join(' | ');
     const systemPrompt = `당신은 모바일 앱 QA 테스트 전문가입니다. 스크린샷을 분석하여 UI 오브젝트를 식별하십시오. 결과는 반드시 JSON 형식으로만 응답하십시오: { "objects": [ { "id": "unique_id", "type": "${dynamicTypes}", "label": "오브젝트 이름", "description": "위치 설명" } ] }`;
+    
+    const baseText = "이 앱 스크린샷에서 테스트 가능한 모든 UI 요소를 찾아 리스트로 정리해줘.";
+    const conditionText = scanConditions.trim() ? `\n다음 추가 조건 및 지시사항을 반드시 엄격하게 준수할 것: ${scanConditions}` : "";
+    const combinedText = baseText + conditionText;
+
     const payload = {
-      contents: [{ role: "user", parts: [{ text: "이 앱 스크린샷에서 테스트 가능한 모든 UI 요소를 찾아 리스트로 정리해줘." }, { inlineData: { mimeType: "image/png", data: base64Data } }] }],
+      contents: [{ role: "user", parts: [{ text: combinedText }, { inlineData: { mimeType: "image/png", data: base64Data } }] }],
       systemInstruction: { parts: [{ text: systemPrompt }] },
       generationConfig: { responseMimeType: "application/json" }
     };
@@ -647,6 +653,7 @@ const App = () => {
       reader.onload = async (event) => {
         const base64Data = event.target.result.split(',')[1];
         const imageSrc = event.target.result;
+        setScanConditions('');
         const newScan = currentProjectData?.activeScan ? {
           ...currentProjectData.activeScan,
           image: imageSrc,
@@ -1656,21 +1663,35 @@ const App = () => {
                       <input type="file" ref={fileInputRef} onChange={handleFileChange} accept="image/*" className="hidden" disabled={isAnalyzing || isProjectClosed} />
                     </div>
                   ) : (
-                    <div className="relative group w-full h-full flex items-center justify-center">
-                      <img src={activeScan.image} className="max-w-full max-h-[600px] rounded-2xl shadow-2xl transition-all" alt="Viewfinder" />
-                      
-                      {/* --- Viewfinder Simple Scan Effect --- */}
-                      {isAnalyzing && (
-                         <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm flex flex-col items-center justify-center rounded-2xl overflow-hidden">
-                            <div className="absolute top-0 left-0 w-full h-1 bg-white/80 shadow-[0_0_10px_white]" style={{ animation: 'smoothScan 2s ease-in-out infinite' }} />
-                            <div className="px-6 py-3 bg-white/10 rounded-full backdrop-blur-md font-bold text-sm text-white shadow-sm flex items-center gap-3">
-                               <Loader2 className="w-5 h-5 animate-spin" /> 분석 중...
-                            </div>
-                         </div>
-                      )}
-                      
+                    <div className="relative group w-full h-full flex flex-col items-center justify-center gap-4">
+                      <div className="relative flex items-center justify-center flex-1 min-h-0 w-full">
+                        <img src={activeScan.image} className="max-w-full max-h-[400px] xl:max-h-[500px] rounded-2xl shadow-2xl transition-all object-contain" alt="Viewfinder" />
+                        
+                        {/* --- Viewfinder Simple Scan Effect --- */}
+                        {isAnalyzing && (
+                           <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm flex flex-col items-center justify-center rounded-2xl overflow-hidden">
+                              <div className="absolute top-0 left-0 w-full h-1 bg-white/80 shadow-[0_0_10px_white]" style={{ animation: 'smoothScan 2s ease-in-out infinite' }} />
+                              <div className="px-6 py-3 bg-white/10 rounded-full backdrop-blur-md font-bold text-sm text-white shadow-sm flex items-center gap-3">
+                                 <Loader2 className="w-5 h-5 animate-spin" /> 분석 중...
+                              </div>
+                           </div>
+                        )}
+                        
+                        {!isAnalyzing && !isProjectClosed && (
+                           <button onClick={async () => { if (user) await updateDoc(getPublicDoc('projects', currentProjectId), { activeScan: null }); }} className="absolute top-4 right-4 p-3 bg-white/90 backdrop-blur rounded-2xl shadow-xl opacity-0 group-hover:opacity-100 transition-all hover:bg-rose-500 hover:text-white"><RefreshCcw className="w-5 h-5" /></button>
+                        )}
+                      </div>
+
                       {!isAnalyzing && !isProjectClosed && (
-                         <button onClick={async () => { if (user) await updateDoc(getPublicDoc('projects', currentProjectId), { activeScan: null }); }} className="absolute top-4 right-4 p-3 bg-white/90 backdrop-blur rounded-2xl shadow-xl opacity-0 group-hover:opacity-100 transition-all hover:bg-rose-500 hover:text-white"><RefreshCcw className="w-5 h-5" /></button>
+                        <div className="w-full max-w-md shrink-0 relative mt-2 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                          <div className="absolute -top-2 left-4 bg-slate-50 px-2 text-[10px] font-black text-blue-500 uppercase tracking-widest z-10 rounded-full">AI Scan Condition</div>
+                          <textarea
+                            placeholder="예: 헤더 영역은 스캔하지 마. 버튼 위주로 찾아줘."
+                            value={scanConditions}
+                            onChange={(e) => setScanConditions(e.target.value)}
+                            className="w-full p-4 pt-5 bg-white border-2 border-blue-100 rounded-2xl text-xs font-bold text-slate-700 outline-none focus:border-blue-400 focus:ring-4 focus:ring-blue-50 resize-none h-20 shadow-inner transition-all placeholder:text-slate-300 scrollbar-hide"
+                          />
+                        </div>
                       )}
                     </div>
                   )}
