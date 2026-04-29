@@ -113,10 +113,6 @@ const styleSheet = `
   0% { transform: translateY(-100%); }
   100% { transform: translateY(100%); }
 }
-@keyframes logoBreath {
-  0%, 100% { filter: drop-shadow(0 0 3px rgba(100, 200, 255, 0.3)) drop-shadow(0 0 10px rgba(0, 102, 255, 0.3)) drop-shadow(0 0 20px rgba(0, 102, 255, 0.1)); }
-  50% { filter: drop-shadow(0 0 5px rgba(100, 200, 255, 0.8)) drop-shadow(0 0 20px rgba(0, 102, 255, 0.7)) drop-shadow(0 0 40px rgba(0, 102, 255, 0.5)); }
-}
 ::-webkit-scrollbar { display: none !important; width: 0 !important; height: 0 !important; }
 * { -ms-overflow-style: none !important; scrollbar-width: none !important; }
 .scrollbar-hide::-webkit-scrollbar { display: none !important; }
@@ -1003,7 +999,7 @@ const App = () => {
         <div className="relative mb-10">
           <div className="absolute inset-0 bg-blue-500 blur-3xl opacity-30 animate-pulse"></div>
           <div className="relative z-10 flex items-center justify-center mb-6">
-            <img src="/icon.png" alt="App Icon" className="w-40 h-40 object-contain hover:scale-105 transition-transform duration-500" style={{ animation: 'logoBreath 4s ease-in-out infinite' }} onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.parentElement.querySelector('svg').classList.remove('hidden'); }} />
+            <img src="/icon.png" alt="App Icon" className="w-40 h-40 object-contain hover:scale-105 transition-transform duration-500" onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.parentElement.querySelector('svg').classList.remove('hidden'); }} />
             <Building2 className="w-40 h-40 text-[#0066FF] hidden" />
           </div>
         </div>
