@@ -997,9 +997,8 @@ const App = () => {
       <div className="min-h-screen bg-[#001529] flex flex-col items-center justify-center p-6 text-white font-sans">
         <style>{styleSheet}</style>
         <div className="relative mb-10">
-          <div className="absolute inset-0 bg-blue-500 blur-3xl opacity-30 animate-pulse"></div>
           <div className="relative z-10 flex items-center justify-center mb-6">
-            <img src="/icon.png" alt="App Icon" className="w-40 h-40 object-contain hover:scale-105 transition-transform duration-500" onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.parentElement.querySelector('svg').classList.remove('hidden'); }} />
+            <img src="/icon.png" alt="App Icon" className="w-40 h-40 object-contain" onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.parentElement.querySelector('svg').classList.remove('hidden'); }} />
             <Building2 className="w-40 h-40 text-[#0066FF] hidden" />
           </div>
         </div>
