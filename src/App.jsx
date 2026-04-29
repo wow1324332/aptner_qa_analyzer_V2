@@ -998,7 +998,10 @@ const App = () => {
         <style>{styleSheet}</style>
         <div className="relative mb-10">
           <div className="absolute inset-0 bg-blue-500 blur-3xl opacity-30 animate-pulse"></div>
-          <div className="bg-white/10 p-5 rounded-[2.5rem] border border-white/20 backdrop-blur-xl mb-6 shadow-2xl relative z-10"><Building2 className="w-16 h-16 text-[#0066FF]" /></div>
+          <div className="bg-white/10 p-5 rounded-[2.5rem] border border-white/20 backdrop-blur-xl mb-6 shadow-2xl relative z-10 flex items-center justify-center">
+            <img src="/icon.png" alt="App Icon" className="w-16 h-16 object-contain drop-shadow-[0_0_15px_rgba(0,102,255,0.4)]" onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.parentElement.querySelector('svg').classList.remove('hidden'); }} />
+            <Building2 className="w-16 h-16 text-[#0066FF] hidden" />
+          </div>
         </div>
         <div className="text-center mb-12">
           <h1 className="text-6xl font-black tracking-tight mb-3 italic"><span className="bg-gradient-to-r from-[#0066FF] to-white bg-clip-text text-transparent not-italic">Testai</span> <span className="text-white opacity-90">Pro</span></h1>
@@ -1712,7 +1715,7 @@ const App = () => {
                   {!activeScan?.image ? (
                     <div onClick={() => !isProjectClosed && fileInputRef.current?.click()} className={`w-full h-full border-2 border-dashed border-slate-200 rounded-[2rem] flex flex-col items-center justify-center gap-6 transition-all p-8 ${isProjectClosed ? 'opacity-50 cursor-not-allowed bg-slate-50' : 'cursor-pointer hover:bg-white hover:border-[#0066FF] group'}`}>
                       <div className="w-20 h-20 bg-blue-50 text-blue-500 rounded-[1.5rem] flex items-center justify-center group-hover:scale-110 transition-all"><Upload /></div>
-                      <div className="text-center"><p className="font-black text-slate-800 uppercase tracking-tight">{isProjectClosed ? 'Project Closed' : 'Upload Screenshot'}</p><p className="text-[11px] text-slate-400 mt-2 font-bold uppercase tracking-widest leading-relaxed">{isProjectClosed ? '더 이상 스크린샷을 업로드할 수 정할 수 없습니다' : '이미지를 업로드하고 분석을 시작하세요'}</p></div>
+                      <div className="text-center"><p className="font-black text-slate-800 uppercase tracking-tight">{isProjectClosed ? 'Project Closed' : 'Upload Screenshot'}</p><p className="text-[11px] text-slate-400 mt-2 font-bold uppercase tracking-widest leading-relaxed">{isProjectClosed ? '더 이상 스크린샷을 업로드할 수 없습니다' : '이미지를 업로드하고 분석을 시작하세요'}</p></div>
                       <input type="file" ref={fileInputRef} onChange={handleFileChange} accept="image/*" className="hidden" disabled={isAnalyzing || isProjectClosed} />
                     </div>
                   ) : (
