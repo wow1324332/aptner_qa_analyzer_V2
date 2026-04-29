@@ -114,8 +114,8 @@ const styleSheet = `
   100% { transform: translateY(100%); }
 }
 @keyframes logoBreath {
-  0%, 100% { filter: drop-shadow(0 0 10px rgba(0, 102, 255, 0.15)); }
-  50% { filter: drop-shadow(0 0 35px rgba(0, 102, 255, 0.6)); }
+  0%, 100% { filter: drop-shadow(0 0 3px rgba(100, 200, 255, 0.3)) drop-shadow(0 0 10px rgba(0, 102, 255, 0.3)) drop-shadow(0 0 20px rgba(0, 102, 255, 0.1)); }
+  50% { filter: drop-shadow(0 0 5px rgba(100, 200, 255, 0.8)) drop-shadow(0 0 20px rgba(0, 102, 255, 0.7)) drop-shadow(0 0 40px rgba(0, 102, 255, 0.5)); }
 }
 ::-webkit-scrollbar { display: none !important; width: 0 !important; height: 0 !important; }
 * { -ms-overflow-style: none !important; scrollbar-width: none !important; }
