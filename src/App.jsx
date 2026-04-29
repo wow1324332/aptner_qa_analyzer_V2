@@ -998,9 +998,9 @@ const App = () => {
         <style>{styleSheet}</style>
         <div className="relative mb-10">
           <div className="absolute inset-0 bg-blue-500 blur-3xl opacity-30 animate-pulse"></div>
-          <div className="bg-white/10 p-5 rounded-[2.5rem] border border-white/20 backdrop-blur-xl mb-6 shadow-2xl relative z-10 flex items-center justify-center">
-            <img src="/icon.png" alt="App Icon" className="w-16 h-16 object-contain drop-shadow-[0_0_15px_rgba(0,102,255,0.4)]" onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.parentElement.querySelector('svg').classList.remove('hidden'); }} />
-            <Building2 className="w-16 h-16 text-[#0066FF] hidden" />
+          <div className="relative z-10 flex items-center justify-center mb-6">
+            <img src="/icon.png" alt="App Icon" className="w-40 h-40 object-contain drop-shadow-[0_0_30px_rgba(0,102,255,0.6)] hover:scale-105 transition-transform duration-500" onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.parentElement.querySelector('svg').classList.remove('hidden'); }} />
+            <Building2 className="w-40 h-40 text-[#0066FF] hidden" />
           </div>
         </div>
         <div className="text-center mb-12">
