@@ -3,7 +3,7 @@ import {
   Upload, Loader2, Layout, RefreshCcw, Building2, Plus, Trash2, X, Save, 
   ChevronRight, ChevronLeft, FolderOpen, FolderPlus, Layers, PlusCircle, 
   Sparkles, LogOut, Camera, Edit2, Check, Settings as SettingsIcon, 
-  AlertOctagon, ChevronUp, ChevronDown, Folder, Download
+  AlertOctagon, ChevronUp, ChevronDown, Folder, Download, Copy
 } from 'lucide-react';
 
 import { initializeApp } from 'firebase/app';
@@ -113,6 +113,12 @@ const styleSheet = `
   0% { transform: translateY(-100%); }
   100% { transform: translateY(100%); }
 }
+@keyframes toastFadeInOut {
+  0% { opacity: 0; transform: translate(-50%, 20px) scale(0.95); filter: blur(4px); }
+  15% { opacity: 1; transform: translate(-50%, 0) scale(1); filter: blur(0); }
+  85% { opacity: 1; transform: translate(-50%, 0) scale(1); filter: blur(0); }
+  100% { opacity: 0; transform: translate(-50%, -10px) scale(0.95); filter: blur(4px); }
+}
 ::-webkit-scrollbar { display: none !important; width: 0 !important; height: 0 !important; }
 * { -ms-overflow-style: none !important; scrollbar-width: none !important; }
 .scrollbar-hide::-webkit-scrollbar { display: none !important; }
@@ -197,6 +203,9 @@ const App = () => {
   const [editingTestCaseLabel, setEditingTestCaseLabel] = useState('');
   const [newTestCaseLabelObjId, setNewTestCaseLabelObjId] = useState(null);
   const [newTestCaseLabel, setNewTestCaseLabel] = useState('');
+  const [collapsedIssueTcIds, setCollapsedIssueTcIds] = useState([]);
+  const [toastMsg, setToastMsg] = useState(null);
+  const toastTimeoutRef = useRef(null);
 
   const [showActionsHistoryId, setShowActionsHistoryId] = useState(null);
   const [draggedHistoryId, setDraggedHistoryId] = useState(null);
@@ -431,6 +440,86 @@ const App = () => {
       return () => clearInterval(interval);
     }
   }, [appState]);
+
+  // --- Copy Function ---
+  const handleCopySingleIssue = (text) => {
+    if (!text || !text.trim()) return;
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    document.body.appendChild(textarea);
+    textarea.select();
+    document.execCommand('copy');
+    document.body.removeChild(textarea);
+
+    if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
+    setToastMsg('COPIED TO CLIPBOARD');
+    toastTimeoutRef.current = setTimeout(() => {
+      setToastMsg(null);
+    }, 3000);
+  };
+
+  const toggleIssueFolder = (tcId) => {
+     setCollapsedIssueTcIds(prev => prev.includes(tcId) ? prev.filter(id => id !== tcId) : [...prev, tcId]);
+  };
+
+  // --- Issue Handlers (Main) ---
+  const updateTestCaseIssue = async (objId, tcId, issueIndex, newValue) => {
+    if (isProjectClosed) return;
+    const testObjects = currentProjectData?.activeScan?.testObjects || [];
+    const updatedObjects = testObjects.map(obj => {
+      if (obj.id === objId) {
+        const updatedCases = (obj.testCases || []).map(tc => {
+          if (tc.id === tcId) {
+            const newIssues = [...(tc.issues || [''])];
+            newIssues[issueIndex] = newValue;
+            return { ...tc, issues: newIssues };
+          }
+          return tc;
+        });
+        return { ...obj, testCases: updatedCases };
+      }
+      return obj;
+    });
+    await updateDoc(getPublicDoc('projects', currentProjectId), { 'activeScan.testObjects': updatedObjects });
+  };
+
+  const addTestCaseIssue = async (objId, tcId) => {
+    if (isProjectClosed) return;
+    const testObjects = currentProjectData?.activeScan?.testObjects || [];
+    const updatedObjects = testObjects.map(obj => {
+      if (obj.id === objId) {
+        const updatedCases = (obj.testCases || []).map(tc => {
+          if (tc.id === tcId) {
+            const newIssues = [...(tc.issues || ['']), ''];
+            return { ...tc, issues: newIssues };
+          }
+          return tc;
+        });
+        return { ...obj, testCases: updatedCases };
+      }
+      return obj;
+    });
+    await updateDoc(getPublicDoc('projects', currentProjectId), { 'activeScan.testObjects': updatedObjects });
+  };
+
+  const removeTestCaseIssue = async (objId, tcId, issueIndex) => {
+    if (isProjectClosed) return;
+    const testObjects = currentProjectData?.activeScan?.testObjects || [];
+    const updatedObjects = testObjects.map(obj => {
+      if (obj.id === objId) {
+        const updatedCases = (obj.testCases || []).map(tc => {
+          if (tc.id === tcId) {
+            const newIssues = (tc.issues || ['']).filter((_, idx) => idx !== issueIndex);
+            return { ...tc, issues: newIssues.length ? newIssues : [''] };
+          }
+          return tc;
+        });
+        return { ...obj, testCases: updatedCases };
+      }
+      return obj;
+    });
+    await updateDoc(getPublicDoc('projects', currentProjectId), { 'activeScan.testObjects': updatedObjects });
+  };
 
   // --- Action Handlers ---
   const handleCustomRegister = async () => {
@@ -834,6 +923,62 @@ const App = () => {
     if (!currentProjectId || !user) return;
     await updateDoc(getPublicDoc('projects', currentProjectId), { status: 'CLOSED' });
     setIsCloseProjectModalOpen(false);
+  };
+
+  // --- Issue Handlers (History) ---
+  const updateHistoryTestCaseIssue = (objId, tcId, issueIndex, newValue) => {
+    if (!selectedHistoryItem || isProjectClosed) return;
+    const updatedObjects = (selectedHistoryItem.testObjects || []).map(obj => {
+      if (obj.id === objId) {
+         const updatedCases = (obj.testCases || []).map(tc => {
+           if (tc.id === tcId) {
+             const newIssues = [...(tc.issues || [''])];
+             newIssues[issueIndex] = newValue;
+             return { ...tc, issues: newIssues };
+           }
+           return tc;
+         });
+         return { ...obj, testCases: updatedCases };
+      }
+      return obj;
+    });
+    setSelectedHistoryItem({ ...selectedHistoryItem, testObjects: updatedObjects });
+  };
+
+  const addHistoryTestCaseIssue = (objId, tcId) => {
+    if (!selectedHistoryItem || isProjectClosed) return;
+    const updatedObjects = (selectedHistoryItem.testObjects || []).map(obj => {
+      if (obj.id === objId) {
+         const updatedCases = (obj.testCases || []).map(tc => {
+           if (tc.id === tcId) {
+             const newIssues = [...(tc.issues || ['']), ''];
+             return { ...tc, issues: newIssues };
+           }
+           return tc;
+         });
+         return { ...obj, testCases: updatedCases };
+      }
+      return obj;
+    });
+    setSelectedHistoryItem({ ...selectedHistoryItem, testObjects: updatedObjects });
+  };
+
+  const removeHistoryTestCaseIssue = (objId, tcId, issueIndex) => {
+    if (!selectedHistoryItem || isProjectClosed) return;
+    const updatedObjects = (selectedHistoryItem.testObjects || []).map(obj => {
+      if (obj.id === objId) {
+         const updatedCases = (obj.testCases || []).map(tc => {
+           if (tc.id === tcId) {
+             const newIssues = (tc.issues || ['']).filter((_, idx) => idx !== issueIndex);
+             return { ...tc, issues: newIssues.length ? newIssues : [''] };
+           }
+           return tc;
+         });
+         return { ...obj, testCases: updatedCases };
+      }
+      return obj;
+    });
+    setSelectedHistoryItem({ ...selectedHistoryItem, testObjects: updatedObjects });
   };
 
   // --- History Logic ---
@@ -1617,15 +1762,77 @@ const App = () => {
                           </div>
                           {(obj.testCases || []).length > 0 && (
                              <div className="mt-3 pt-3 border-t border-slate-100 space-y-1">
-                                {(obj.testCases || []).map(tc => (
-                                   <div key={tc.id} className="flex justify-between items-center">
-                                      <span className="text-[10px] text-slate-500 font-bold">• {tc.label}</span>
-                                      <div className="flex gap-1 shrink-0">
-                                         <button disabled={isProjectClosed} onClick={() => toggleHistoryTCStatus(obj.id, tc.id, 'PASS')} className={`px-2 py-1 rounded text-[8px] font-black uppercase transition-all ${tc.status === 'PASS' ? 'text-white bg-emerald-500 shadow-sm' : `text-slate-400 bg-slate-100 ${isProjectClosed ? '' : 'hover:bg-emerald-50 hover:text-emerald-500'}`} ${isProjectClosed ? 'opacity-60 cursor-not-allowed' : ''}`}>PASS</button>
-                                         <button disabled={isProjectClosed} onClick={() => toggleHistoryTCStatus(obj.id, tc.id, 'FAIL')} className={`px-2 py-1 rounded text-[8px] font-black uppercase transition-all ${tc.status === 'FAIL' ? 'text-white bg-rose-500 shadow-sm' : `text-slate-400 bg-slate-100 ${isProjectClosed ? '' : 'hover:bg-rose-50 hover:text-rose-500'}`} ${isProjectClosed ? 'opacity-60 cursor-not-allowed' : ''}`}>FAIL</button>
+                                {(obj.testCases || []).map(tc => {
+                                   if (editingTestCaseId === tc.id) {
+                                      return (
+                                         <div key={tc.id} className="flex items-center justify-between p-3 bg-white/60 rounded-xl border border-slate-100 shadow-sm gap-2">
+                                            <input type="text" className="flex-1 px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-bold outline-none" value={editingTestCaseLabel} onChange={(e) => setEditingTestCaseLabel(e.target.value)} onKeyPress={(e) => e.key === 'Enter' && saveEditedTestCase(obj.id)} autoFocus />
+                                            <div className="flex gap-1 shrink-0">
+                                               <button onClick={() => setEditingTestCaseId(null)} className="px-2 py-1.5 rounded-lg text-[9px] font-black uppercase bg-white text-slate-400 border border-slate-200 hover:bg-slate-50">취소</button>
+                                               <button onClick={() => saveEditedTestCase(obj.id)} className="px-2 py-1.5 rounded-lg text-[9px] font-black uppercase bg-blue-500 text-white shadow-md hover:bg-blue-600">저장</button>
+                                            </div>
+                                         </div>
+                                      )
+                                   }
+                                   return (
+                                   <div key={tc.id} className="flex flex-col p-3 bg-white/60 rounded-xl border border-slate-100 shadow-sm group/tc gap-2">
+                                      <div className="flex items-center justify-between w-full">
+                                         <div className="flex items-center gap-2 flex-1 min-w-0 pr-2">
+                                            <span className="text-xs font-bold text-slate-700 truncate">{tc.label}</span>
+                                            {!isProjectClosed && (
+                                               <div className="hidden group-hover/tc:flex items-center gap-1 shrink-0">
+                                                  <button onClick={() => { setEditingTestCaseId(tc.id); setEditingTestCaseLabel(tc.label); }} className="p-1 text-slate-300 hover:text-blue-500 transition-colors"><Edit2 className="w-3 h-3" /></button>
+                                                  <button onClick={() => deleteTestCaseFromObject(obj.id, tc.id)} className="p-1 text-slate-300 hover:text-rose-500 transition-colors"><Trash2 className="w-3 h-3" /></button>
+                                               </div>
+                                            )}
+                                         </div>
+                                         <div className="flex gap-2 shrink-0">
+                                            <button disabled={isProjectClosed} onClick={() => toggleHistoryTCStatus(obj.id, tc.id, 'PASS')} className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase transition-all ${tc.status === 'PASS' ? 'bg-emerald-500 text-white shadow-md' : 'bg-white text-slate-400 border border-slate-200 hover:border-emerald-500 hover:text-emerald-500'} ${isProjectClosed ? 'opacity-50 cursor-not-allowed' : ''}`}>PASS</button>
+                                            <button disabled={isProjectClosed} onClick={() => toggleHistoryTCStatus(obj.id, tc.id, 'FAIL')} className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase transition-all ${tc.status === 'FAIL' ? 'bg-rose-500 text-white shadow-md' : 'bg-white text-slate-400 border border-slate-200 hover:border-rose-500 hover:text-rose-500'} ${isProjectClosed ? 'opacity-50 cursor-not-allowed' : ''}`}>FAIL</button>
+                                         </div>
                                       </div>
+
+                                      {/* 이슈 입력 영역 (Fail 시 노출) */}
+                                      {tc.status === 'FAIL' && (
+                                        <div className="w-full mt-1 pt-3 border-t border-rose-100/50 flex flex-col gap-2">
+                                           <div className="flex items-center justify-between cursor-pointer group/issueToggle" onClick={() => toggleIssueFolder(tc.id)}>
+                                              <span className="text-[10px] font-black text-rose-500 uppercase tracking-widest flex items-center gap-1 hover:text-rose-600 transition-colors">
+                                                 {!collapsedIssueTcIds.includes(tc.id) ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+                                                 <AlertOctagon className="w-3 h-3" /> Issues ({(tc.issues || ['']).length})
+                                              </span>
+                                              <div className="flex gap-1.5" onClick={e => e.stopPropagation()}>
+                                                 {!isProjectClosed && (
+                                                    <button onClick={() => { if(collapsedIssueTcIds.includes(tc.id)) toggleIssueFolder(tc.id); addHistoryTestCaseIssue(obj.id, tc.id); }} className="p-1.5 bg-rose-50 border border-rose-200 text-rose-600 rounded-lg hover:bg-rose-500 hover:text-white transition-all shadow-sm" title="이슈 추가"><Plus className="w-3.5 h-3.5" /></button>
+                                                 )}
+                                              </div>
+                                           </div>
+                                           {!collapsedIssueTcIds.includes(tc.id) && (
+                                              <div className="flex flex-col gap-1.5 mt-1 animate-in fade-in slide-in-from-top-1 duration-200">
+                                                 {(tc.issues || ['']).map((issue, idx) => (
+                                                    <div key={idx} className="flex items-center gap-2">
+                                                       <span className="text-rose-400 text-[10px] font-bold shrink-0 w-3 text-right">{idx + 1}.</span>
+                                                       <div className={`flex-1 relative flex rounded-lg border border-rose-100 bg-rose-50/50 shadow-inner transition-all focus-within:border-rose-300 focus-within:bg-white ${isProjectClosed ? 'opacity-70' : ''}`}>
+                                                          <input 
+                                                             type="text" 
+                                                             defaultValue={issue} 
+                                                             onBlur={(e) => updateHistoryTestCaseIssue(obj.id, tc.id, idx, e.target.value)}
+                                                             disabled={isProjectClosed}
+                                                             placeholder="이슈 내용을 입력하세요" 
+                                                             className="w-full px-3 py-1.5 bg-transparent text-xs font-bold outline-none text-slate-700 [mask-image:linear-gradient(to_right,black_85%,transparent_100%)] focus:[mask-image:none]" 
+                                                          />
+                                                       </div>
+                                                       <button onClick={() => handleCopySingleIssue(issue)} className="p-1.5 bg-white border border-slate-200 text-slate-400 hover:text-blue-500 rounded-lg hover:bg-blue-50 transition-colors shadow-sm shrink-0" title="이슈 복사"><Copy className="w-3.5 h-3.5" /></button>
+                                                       {!isProjectClosed && (
+                                                          <button onClick={() => removeHistoryTestCaseIssue(obj.id, tc.id, idx)} className="p-1.5 text-rose-300 hover:text-rose-600 hover:bg-rose-100 rounded-lg transition-all shrink-0" title="이슈 삭제"><Trash2 className="w-3.5 h-3.5" /></button>
+                                                       )}
+                                                    </div>
+                                                 ))}
+                                              </div>
+                                           )}
+                                        </div>
+                                      )}
                                    </div>
-                                ))}
+                                 )})}
                              </div>
                           )}
                        </div>
@@ -1938,20 +2145,62 @@ const App = () => {
                                          )
                                       }
                                       return (
-                                      <div key={tc.id} className="flex items-center justify-between p-3 bg-white/60 rounded-xl border border-slate-100 shadow-sm group/tc">
-                                         <div className="flex items-center gap-2 flex-1 min-w-0 pr-2">
-                                            <span className="text-xs font-bold text-slate-700 truncate">{tc.label}</span>
-                                            {!isProjectClosed && (
-                                               <div className="hidden group-hover/tc:flex items-center gap-1 shrink-0">
-                                                  <button onClick={() => { setEditingTestCaseId(tc.id); setEditingTestCaseLabel(tc.label); }} className="p-1 text-slate-300 hover:text-blue-500 transition-colors"><Edit2 className="w-3 h-3" /></button>
-                                                  <button onClick={() => deleteTestCaseFromObject(obj.id, tc.id)} className="p-1 text-slate-300 hover:text-rose-500 transition-colors"><Trash2 className="w-3 h-3" /></button>
-                                               </div>
-                                            )}
+                                      <div key={tc.id} className="flex flex-col p-3 bg-white/60 rounded-xl border border-slate-100 shadow-sm group/tc gap-2">
+                                         <div className="flex items-center justify-between w-full">
+                                            <div className="flex items-center gap-2 flex-1 min-w-0 pr-2">
+                                               <span className="text-xs font-bold text-slate-700 truncate">{tc.label}</span>
+                                               {!isProjectClosed && (
+                                                  <div className="hidden group-hover/tc:flex items-center gap-1 shrink-0">
+                                                     <button onClick={() => { setEditingTestCaseId(tc.id); setEditingTestCaseLabel(tc.label); }} className="p-1 text-slate-300 hover:text-blue-500 transition-colors"><Edit2 className="w-3 h-3" /></button>
+                                                     <button onClick={() => deleteTestCaseFromObject(obj.id, tc.id)} className="p-1 text-slate-300 hover:text-rose-500 transition-colors"><Trash2 className="w-3 h-3" /></button>
+                                                  </div>
+                                               )}
+                                            </div>
+                                            <div className="flex gap-2 shrink-0">
+                                               <button disabled={isProjectClosed} onClick={() => toggleTestCaseStatus(obj.id, tc.id, 'PASS')} className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase transition-all ${tc.status === 'PASS' ? 'bg-emerald-500 text-white shadow-md' : 'bg-white text-slate-400 border border-slate-200 hover:border-emerald-500 hover:text-emerald-500'} ${isProjectClosed ? 'opacity-50 cursor-not-allowed' : ''}`}>PASS</button>
+                                               <button disabled={isProjectClosed} onClick={() => toggleTestCaseStatus(obj.id, tc.id, 'FAIL')} className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase transition-all ${tc.status === 'FAIL' ? 'bg-rose-500 text-white shadow-md' : 'bg-white text-slate-400 border border-slate-200 hover:border-rose-500 hover:text-rose-500'} ${isProjectClosed ? 'opacity-50 cursor-not-allowed' : ''}`}>FAIL</button>
+                                            </div>
                                          </div>
-                                         <div className="flex gap-2 shrink-0">
-                                            <button disabled={isProjectClosed} onClick={() => toggleTestCaseStatus(obj.id, tc.id, 'PASS')} className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase transition-all ${tc.status === 'PASS' ? 'bg-emerald-500 text-white shadow-md' : 'bg-white text-slate-400 border border-slate-200 hover:border-emerald-500 hover:text-emerald-500'} ${isProjectClosed ? 'opacity-50 cursor-not-allowed' : ''}`}>PASS</button>
-                                            <button disabled={isProjectClosed} onClick={() => toggleTestCaseStatus(obj.id, tc.id, 'FAIL')} className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase transition-all ${tc.status === 'FAIL' ? 'bg-rose-500 text-white shadow-md' : 'bg-white text-slate-400 border border-slate-200 hover:border-rose-500 hover:text-rose-500'} ${isProjectClosed ? 'opacity-50 cursor-not-allowed' : ''}`}>FAIL</button>
-                                         </div>
+
+                                         {/* 이슈 입력 영역 (Fail 시 노출) */}
+                                         {tc.status === 'FAIL' && (
+                                           <div className="w-full mt-1 pt-3 border-t border-rose-100/50 flex flex-col gap-2">
+                                              <div className="flex items-center justify-between cursor-pointer group/issueToggle" onClick={() => toggleIssueFolder(tc.id)}>
+                                                 <span className="text-[10px] font-black text-rose-500 uppercase tracking-widest flex items-center gap-1 hover:text-rose-600 transition-colors">
+                                                    {!collapsedIssueTcIds.includes(tc.id) ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+                                                    <AlertOctagon className="w-3 h-3" /> Issues ({(tc.issues || ['']).length})
+                                                 </span>
+                                                 <div className="flex gap-1.5" onClick={e => e.stopPropagation()}>
+                                                    {!isProjectClosed && (
+                                                       <button onClick={() => { if(collapsedIssueTcIds.includes(tc.id)) toggleIssueFolder(tc.id); addTestCaseIssue(obj.id, tc.id); }} className="p-1.5 bg-rose-50 border border-rose-200 text-rose-600 rounded-lg hover:bg-rose-500 hover:text-white transition-all shadow-sm" title="이슈 추가"><Plus className="w-3.5 h-3.5" /></button>
+                                                    )}
+                                                 </div>
+                                              </div>
+                                              {!collapsedIssueTcIds.includes(tc.id) && (
+                                                 <div className="flex flex-col gap-1.5 mt-1 animate-in fade-in slide-in-from-top-1 duration-200">
+                                                    {(tc.issues || ['']).map((issue, idx) => (
+                                                       <div key={idx} className="flex items-center gap-2">
+                                                          <span className="text-rose-400 text-[10px] font-bold shrink-0 w-3 text-right">{idx + 1}.</span>
+                                                          <div className={`flex-1 relative flex rounded-lg border border-rose-100 bg-rose-50/50 shadow-inner transition-all focus-within:border-rose-300 focus-within:bg-white ${isProjectClosed ? 'opacity-70' : ''}`}>
+                                                             <input 
+                                                                type="text" 
+                                                                defaultValue={issue} 
+                                                                onBlur={(e) => updateTestCaseIssue(obj.id, tc.id, idx, e.target.value)}
+                                                                disabled={isProjectClosed}
+                                                                placeholder="이슈 내용을 입력하세요" 
+                                                                className="w-full px-3 py-1.5 bg-transparent text-xs font-bold outline-none text-slate-700 [mask-image:linear-gradient(to_right,black_85%,transparent_100%)] focus:[mask-image:none]" 
+                                                             />
+                                                          </div>
+                                                          <button onClick={() => handleCopySingleIssue(issue)} className="p-1.5 bg-white border border-slate-200 text-slate-400 hover:text-blue-500 rounded-lg hover:bg-blue-50 transition-colors shadow-sm shrink-0" title="이슈 복사"><Copy className="w-3.5 h-3.5" /></button>
+                                                          {!isProjectClosed && (
+                                                             <button onClick={() => removeTestCaseIssue(obj.id, tc.id, idx)} className="p-1.5 text-rose-300 hover:text-rose-600 hover:bg-rose-100 rounded-lg transition-all shrink-0" title="이슈 삭제"><Trash2 className="w-3.5 h-3.5" /></button>
+                                                          )}
+                                                       </div>
+                                                    ))}
+                                                 </div>
+                                              )}
+                                           </div>
+                                         )}
                                       </div>
                                     )}) : (
                                        <p className="text-xs text-slate-400 font-bold italic text-center py-2">등록된 하위 테스트 케이스가 없습니다.</p>
@@ -2042,6 +2291,16 @@ const App = () => {
             <span className="text-[8px] font-black uppercase tracking-widest leading-none">Top</span>
           </button>
         </div>
+
+        {/* --- Cinematic Toast Popup --- */}
+        {toastMsg && (
+          <div className="fixed bottom-12 left-1/2 z-[400] pointer-events-none" style={{ animation: 'toastFadeInOut 3s cubic-bezier(0.16, 1, 0.3, 1) forwards' }}>
+             <div className="px-6 py-3.5 bg-[#001529]/95 backdrop-blur-xl border border-blue-500/30 text-white rounded-full shadow-[0_10px_40px_rgba(0,102,255,0.4)] flex items-center gap-3">
+                <Check className="w-4 h-4 text-emerald-400" />
+                <span className="text-xs font-black uppercase tracking-widest">{toastMsg}</span>
+             </div>
+          </div>
+        )}
       </div>
     </div>
   );
