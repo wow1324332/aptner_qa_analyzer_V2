@@ -3,7 +3,7 @@ import {
   Upload, Loader2, Layout, RefreshCcw, Building2, Plus, Trash2, X, Save, 
   ChevronRight, ChevronLeft, FolderOpen, FolderPlus, Layers, PlusCircle, 
   Sparkles, LogOut, Camera, Edit2, Check, Settings as SettingsIcon, 
-  AlertOctagon, ChevronUp, ChevronDown, Folder, Download, Copy
+  AlertOctagon, ChevronUp, ChevronDown, Folder, Download, Copy, ExternalLink
 } from 'lucide-react';
 
 import { initializeApp } from 'firebase/app';
@@ -233,6 +233,13 @@ const App = () => {
   const [scanAbortController, setScanAbortController] = useState(null);
   const [scanConditions, setScanConditions] = useState('');
   const [transitionalProjectName, setTransitionalProjectName] = useState('');
+  
+  // Jira 연동 관리 State
+  const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
+  const [jiraSettingsForm, setJiraSettingsForm] = useState({ enabled: false, epicUrl: '' });
+  const [jiraCreateModal, setJiraCreateModal] = useState(null);
+  const [jiraLinkingTarget, setJiraLinkingTarget] = useState(null);
+
   // PWA 설치 관련 State
   const [deferredPrompt, setDeferredPrompt] = useState(null);
   const [isInstallable, setIsInstallable] = useState(false);
@@ -462,6 +469,31 @@ const App = () => {
      setCollapsedIssueTcIds(prev => prev.includes(tcId) ? prev.filter(id => id !== tcId) : [...prev, tcId]);
   };
 
+  // --- Jira Logic ---
+  const saveJiraKey = async (objId, tcId, issueIndex, keyVal) => {
+    if (!keyVal.trim()) {
+       setJiraLinkingTarget(null);
+       return;
+    }
+    const testObjects = currentProjectData?.activeScan?.testObjects || [];
+    const updatedObjects = testObjects.map(obj => {
+      if (obj.id === objId) {
+        const updatedCases = (obj.testCases || []).map(tc => {
+          if (tc.id === tcId) {
+            const newJiraKeys = [...(tc.jiraKeys || [])];
+            newJiraKeys[issueIndex] = keyVal.trim();
+            return { ...tc, jiraKeys: newJiraKeys };
+          }
+          return tc;
+        });
+        return { ...obj, testCases: updatedCases };
+      }
+      return obj;
+    });
+    await updateDoc(getPublicDoc('projects', currentProjectId), { 'activeScan.testObjects': updatedObjects });
+    setJiraLinkingTarget(null);
+  };
+
   // --- Issue Handlers (Main) ---
   const updateTestCaseIssue = async (objId, tcId, issueIndex, newValue) => {
     if (isProjectClosed) return;
@@ -491,7 +523,8 @@ const App = () => {
         const updatedCases = (obj.testCases || []).map(tc => {
           if (tc.id === tcId) {
             const newIssues = [...(tc.issues || ['']), ''];
-            return { ...tc, issues: newIssues };
+            const newJiraKeys = [...(tc.jiraKeys || []), null];
+            return { ...tc, issues: newIssues, jiraKeys: newJiraKeys };
           }
           return tc;
         });
@@ -510,7 +543,8 @@ const App = () => {
         const updatedCases = (obj.testCases || []).map(tc => {
           if (tc.id === tcId) {
             const newIssues = (tc.issues || ['']).filter((_, idx) => idx !== issueIndex);
-            return { ...tc, issues: newIssues.length ? newIssues : [''] };
+            const newJiraKeys = (tc.jiraKeys || []).filter((_, idx) => idx !== issueIndex);
+            return { ...tc, issues: newIssues.length ? newIssues : [''], jiraKeys: newJiraKeys.length ? newJiraKeys : [] };
           }
           return tc;
         });
@@ -934,7 +968,8 @@ const App = () => {
            if (tc.id === tcId) {
              const newIssues = [...(tc.issues || [''])];
              newIssues[issueIndex] = newValue;
-             return { ...tc, issues: newIssues };
+             const newJiraKeys = [...(tc.jiraKeys || [])];
+             return { ...tc, issues: newIssues, jiraKeys: newJiraKeys };
            }
            return tc;
          });
@@ -952,7 +987,8 @@ const App = () => {
          const updatedCases = (obj.testCases || []).map(tc => {
            if (tc.id === tcId) {
              const newIssues = [...(tc.issues || ['']), ''];
-             return { ...tc, issues: newIssues };
+             const newJiraKeys = [...(tc.jiraKeys || []), null];
+             return { ...tc, issues: newIssues, jiraKeys: newJiraKeys };
            }
            return tc;
          });
@@ -970,7 +1006,8 @@ const App = () => {
          const updatedCases = (obj.testCases || []).map(tc => {
            if (tc.id === tcId) {
              const newIssues = (tc.issues || ['']).filter((_, idx) => idx !== issueIndex);
-             return { ...tc, issues: newIssues.length ? newIssues : [''] };
+             const newJiraKeys = (tc.jiraKeys || []).filter((_, idx) => idx !== issueIndex);
+             return { ...tc, issues: newIssues.length ? newIssues : [''], jiraKeys: newJiraKeys.length ? newJiraKeys : [] };
            }
            return tc;
          });
@@ -1565,6 +1602,75 @@ const App = () => {
         </div>
       )}
 
+      {/* --- 연동 환경 설정 모달 --- */}
+      {isSettingsModalOpen && (
+         <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-300">
+            <div className="bg-white w-full max-w-md rounded-[2rem] shadow-2xl p-6 flex flex-col text-slate-800">
+               <div className="flex items-center justify-between mb-6 border-b pb-4 border-slate-100">
+                  <h2 className="text-lg font-black uppercase tracking-tight text-slate-800 flex items-center gap-2"><SettingsIcon className="w-5 h-5 text-blue-500" /> 연동 환경 설정</h2>
+                  <button onClick={() => setIsSettingsModalOpen(false)} className="p-2 hover:bg-slate-100 rounded-full text-slate-500 transition-colors"><X className="w-5 h-5" /></button>
+               </div>
+               <div className="space-y-6 mb-6">
+                  <div className="flex items-center justify-between">
+                     <span className="text-sm font-bold text-slate-700">Jira 연동 활성화</span>
+                     <button onClick={() => setJiraSettingsForm({...jiraSettingsForm, enabled: !jiraSettingsForm.enabled})} className={`w-12 h-6 rounded-full transition-colors relative ${jiraSettingsForm.enabled ? 'bg-[#0052CC]' : 'bg-slate-200'}`}>
+                        <div className={`w-5 h-5 bg-white rounded-full absolute top-0.5 transition-transform ${jiraSettingsForm.enabled ? 'translate-x-6' : 'translate-x-0.5'}`} />
+                     </button>
+                  </div>
+                  {jiraSettingsForm.enabled && (
+                     <div className="space-y-2 animate-in fade-in slide-in-from-top-2">
+                        <label className="text-[10px] font-black text-blue-500 uppercase tracking-widest">Jira Epic URL</label>
+                        <input type="text" placeholder="https://[도메인].atlassian.net/browse/[EPIC-KEY]" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold outline-none focus:border-[#0052CC] transition-all" value={jiraSettingsForm.epicUrl} onChange={(e) => setJiraSettingsForm({...jiraSettingsForm, epicUrl: e.target.value})} />
+                     </div>
+                  )}
+               </div>
+               <button onClick={async () => {
+                  await updateDoc(getPublicDoc('projects', currentProjectId), { 
+                     jiraIntegration: jiraSettingsForm.enabled, 
+                     jiraEpicUrl: jiraSettingsForm.epicUrl.trim() 
+                  });
+                  setIsSettingsModalOpen(false);
+               }} className="w-full py-4 bg-[#0052CC] text-white rounded-xl font-black text-sm shadow-xl hover:bg-blue-700 active:scale-95 transition-all">SAVE SETTINGS</button>
+            </div>
+         </div>
+      )}
+
+      {/* --- Jira 이슈 생성 모달 --- */}
+      {jiraCreateModal && (
+         <div className="fixed inset-0 z-[250] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-300">
+            <div className="bg-white w-full max-w-lg rounded-[2.5rem] shadow-2xl p-8 flex flex-col text-slate-800">
+               <div className="flex items-center justify-between mb-6 border-b pb-4 border-slate-100">
+                  <h2 className="text-xl font-black uppercase tracking-tight text-slate-800 flex items-center gap-2"><Layout className="w-5 h-5 text-[#0052CC]"/> Jira 이슈 만들기</h2>
+                  <button onClick={() => setJiraCreateModal(null)} className="p-2 hover:bg-slate-100 rounded-full text-slate-500 transition-colors"><X className="w-5 h-5" /></button>
+               </div>
+               <div className="space-y-4 mb-8">
+                  <div className="space-y-2">
+                     <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">요약 (Summary)</label>
+                     <input type="text" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold outline-none text-slate-700" value={jiraCreateModal.summary} onChange={(e) => setJiraCreateModal({...jiraCreateModal, summary: e.target.value})} />
+                  </div>
+                  <div className="space-y-2">
+                     <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">이슈 내용 (Description)</label>
+                     <textarea className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold outline-none focus:border-[#0052CC] transition-all h-32 resize-none scrollbar-hide" placeholder="상세 내용을 입력하세요" value={jiraCreateModal.description} onChange={(e) => setJiraCreateModal({...jiraCreateModal, description: e.target.value})}></textarea>
+                  </div>
+               </div>
+               <div className="flex justify-end gap-3">
+                  <button onClick={() => setJiraCreateModal(null)} className="px-6 py-3 bg-slate-100 text-slate-600 rounded-xl font-black text-sm hover:bg-slate-200 transition-all">취소</button>
+                  <button onClick={() => {
+                     const epicUrl = currentProjectData?.jiraEpicUrl || '';
+                     let domain = '';
+                     try { domain = new URL(epicUrl).origin; } catch(e) {}
+                     if (domain) {
+                        const url = `${domain}/secure/CreateIssueDetails!init.jspa?summary=${encodeURIComponent(jiraCreateModal.summary)}&description=${encodeURIComponent(jiraCreateModal.description)}`;
+                        window.open(url, '_blank');
+                     }
+                     setJiraLinkingTarget(`${jiraCreateModal.objId}_${jiraCreateModal.tcId}_${jiraCreateModal.issueIndex}`);
+                     setJiraCreateModal(null);
+                  }} className="px-6 py-3 bg-[#0052CC] text-white rounded-xl font-black text-sm shadow-lg hover:bg-blue-700 active:scale-95 transition-all">지라에서 만들기</button>
+               </div>
+            </div>
+         </div>
+      )}
+
       {isSavingReport && (
         <div className="fixed inset-0 z-[300] flex items-center justify-center bg-[#001529]/90 backdrop-blur-xl animate-in fade-in duration-500 overflow-hidden">
           <div className="relative flex flex-col items-center">
@@ -1809,22 +1915,53 @@ const App = () => {
                                            {!collapsedIssueTcIds.includes(tc.id) && (
                                               <div className="flex flex-col gap-1.5 mt-1 animate-in fade-in slide-in-from-top-1 duration-200">
                                                  {(tc.issues || ['']).map((issue, idx) => (
-                                                    <div key={idx} className="flex items-center gap-2">
-                                                       <span className="text-rose-400 text-[10px] font-bold shrink-0 w-3 text-right">{idx + 1}.</span>
-                                                       <div className={`flex-1 relative flex rounded-lg border border-rose-100 bg-rose-50/50 shadow-inner transition-all focus-within:border-rose-300 focus-within:bg-white ${isProjectClosed ? 'opacity-70' : ''}`}>
-                                                          <input 
-                                                             type="text" 
-                                                             defaultValue={issue} 
-                                                             onBlur={(e) => updateHistoryTestCaseIssue(obj.id, tc.id, idx, e.target.value)}
-                                                             disabled={isProjectClosed}
-                                                             placeholder="이슈 내용을 입력하세요" 
-                                                             className="w-full px-3 py-1.5 bg-transparent text-xs font-bold outline-none text-slate-700 [mask-image:linear-gradient(to_right,black_85%,transparent_100%)] focus:[mask-image:none]" 
-                                                          />
+                                                    <div key={idx} className="flex items-start flex-col gap-1 mt-1">
+                                                       <div className="flex items-center gap-2 w-full">
+                                                          <span className="text-rose-400 text-[10px] font-bold shrink-0 w-3 text-right">{idx + 1}.</span>
+                                                          <div className={`flex-1 relative flex rounded-lg border border-rose-100 bg-rose-50/50 shadow-inner transition-all focus-within:border-rose-300 focus-within:bg-white ${isProjectClosed ? 'opacity-70' : ''}`}>
+                                                             <input 
+                                                                type="text" 
+                                                                defaultValue={issue} 
+                                                                onBlur={(e) => updateHistoryTestCaseIssue(obj.id, tc.id, idx, e.target.value)}
+                                                                disabled={isProjectClosed}
+                                                                placeholder="이슈 내용을 입력하세요" 
+                                                                className="w-full px-3 py-1.5 bg-transparent text-xs font-bold outline-none text-slate-700 [mask-image:linear-gradient(to_right,black_85%,transparent_100%)] focus:[mask-image:none]" 
+                                                             />
+                                                          </div>
+                                                          <button onClick={() => handleCopySingleIssue(issue)} className="p-1.5 bg-white border border-slate-200 text-slate-400 hover:text-blue-500 rounded-lg hover:bg-blue-50 transition-colors shadow-sm shrink-0" title="이슈 복사"><Copy className="w-3.5 h-3.5" /></button>
+                                                          {!isProjectClosed && (
+                                                             <button onClick={() => removeHistoryTestCaseIssue(obj.id, tc.id, idx)} className="p-1.5 text-rose-300 hover:text-rose-600 hover:bg-rose-100 rounded-lg transition-all shrink-0" title="이슈 삭제"><Trash2 className="w-3.5 h-3.5" /></button>
+                                                          )}
                                                        </div>
-                                                       <button onClick={() => handleCopySingleIssue(issue)} className="p-1.5 bg-white border border-slate-200 text-slate-400 hover:text-blue-500 rounded-lg hover:bg-blue-50 transition-colors shadow-sm shrink-0" title="이슈 복사"><Copy className="w-3.5 h-3.5" /></button>
-                                                       {!isProjectClosed && (
-                                                          <button onClick={() => removeHistoryTestCaseIssue(obj.id, tc.id, idx)} className="p-1.5 text-rose-300 hover:text-rose-600 hover:bg-rose-100 rounded-lg transition-all shrink-0" title="이슈 삭제"><Trash2 className="w-3.5 h-3.5" /></button>
-                                                       )}
+                                                       <div className="flex gap-1.5 ml-7">
+                                                          {/* JIRA BUTTON OR INPUT OR LINK */}
+                                                          {currentProjectData?.jiraIntegration && currentProjectData?.jiraEpicUrl && !isProjectClosed && (
+                                                             tc.jiraKeys && tc.jiraKeys[idx] ? (
+                                                                <button onClick={() => {
+                                                                   let domain = '';
+                                                                   try { domain = new URL(currentProjectData.jiraEpicUrl).origin; } catch(e) {}
+                                                                   if (domain) window.open(`${domain}/browse/${tc.jiraKeys[idx]}`, '_blank');
+                                                                }} className="px-2 py-1.5 bg-[#0052CC]/10 text-[#0052CC] border border-[#0052CC]/20 rounded-lg text-[10px] font-black uppercase hover:bg-[#0052CC]/20 transition-colors shadow-sm flex items-center gap-1.5 shrink-0" title="Jira 이동">
+                                                                   {tc.jiraKeys[idx]} <ExternalLink className="w-3 h-3" />
+                                                                </button>
+                                                             ) : jiraLinkingTarget === `${obj.id}_${tc.id}_${idx}` ? (
+                                                                <input 
+                                                                   type="text" 
+                                                                   autoFocus
+                                                                   placeholder="Jira 이슈 키 (예: BUG-123)" 
+                                                                   className="w-40 px-2 py-1.5 bg-white border border-blue-300 text-slate-700 rounded-lg text-[10px] font-bold outline-none focus:ring-2 focus:ring-blue-500/20 shadow-inner transition-all shrink-0"
+                                                                   onBlur={(e) => saveJiraKey(obj.id, tc.id, idx, e.target.value)}
+                                                                   onKeyPress={(e) => { if (e.key === 'Enter') { saveJiraKey(obj.id, tc.id, idx, e.target.value); e.target.blur(); } }}
+                                                                />
+                                                             ) : (
+                                                                <button onClick={() => {
+                                                                   setJiraCreateModal({ objId: obj.id, tcId: tc.id, issueIndex: idx, summary: issue || '', description: '' });
+                                                                }} className="px-2 py-1.5 bg-white border border-slate-200 text-[#0052CC] rounded-lg text-[10px] font-black uppercase hover:bg-slate-50 transition-colors shadow-sm flex items-center gap-1.5 shrink-0">
+                                                                   <Layout className="w-3 h-3" /> 지라 등록
+                                                                </button>
+                                                             )
+                                                          )}
+                                                       </div>
                                                     </div>
                                                  ))}
                                               </div>
@@ -1872,7 +2009,15 @@ const App = () => {
             
             <div className="flex items-center gap-3">
               {!isProjectClosed && (currentProjectData?.createdBy === manualInfo.memberId || currentProjectData?.createdBy === user?.uid) && (
-                <button onClick={() => setIsCloseProjectModalOpen(true)} className="px-5 py-3 bg-rose-50 text-rose-500 border border-rose-200 rounded-xl shadow-sm font-black text-xs uppercase tracking-widest hover:bg-rose-500 hover:text-white transition-all">CLOSE PROJECT</button>
+                <>
+                  <button onClick={() => {
+                     setJiraSettingsForm({ enabled: currentProjectData?.jiraIntegration || false, epicUrl: currentProjectData?.jiraEpicUrl || '' });
+                     setIsSettingsModalOpen(true);
+                  }} className="px-4 py-3 bg-white text-slate-500 border border-slate-200 rounded-xl shadow-sm font-black text-[10px] uppercase tracking-widest hover:bg-slate-50 hover:text-[#0052CC] transition-all flex items-center gap-2">
+                     <SettingsIcon className="w-3.5 h-3.5" /> 연동 설정
+                  </button>
+                  <button onClick={() => setIsCloseProjectModalOpen(true)} className="px-5 py-3 bg-rose-50 text-rose-500 border border-rose-200 rounded-xl shadow-sm font-black text-xs uppercase tracking-widest hover:bg-rose-500 hover:text-white transition-all">CLOSE PROJECT</button>
+                </>
               )}
 
               <div className="relative">
@@ -2179,22 +2324,53 @@ const App = () => {
                                               {!collapsedIssueTcIds.includes(tc.id) && (
                                                  <div className="flex flex-col gap-1.5 mt-1 animate-in fade-in slide-in-from-top-1 duration-200">
                                                     {(tc.issues || ['']).map((issue, idx) => (
-                                                       <div key={idx} className="flex items-center gap-2">
-                                                          <span className="text-rose-400 text-[10px] font-bold shrink-0 w-3 text-right">{idx + 1}.</span>
-                                                          <div className={`flex-1 relative flex rounded-lg border border-rose-100 bg-rose-50/50 shadow-inner transition-all focus-within:border-rose-300 focus-within:bg-white ${isProjectClosed ? 'opacity-70' : ''}`}>
-                                                             <input 
-                                                                type="text" 
-                                                                defaultValue={issue} 
-                                                                onBlur={(e) => updateTestCaseIssue(obj.id, tc.id, idx, e.target.value)}
-                                                                disabled={isProjectClosed}
-                                                                placeholder="이슈 내용을 입력하세요" 
-                                                                className="w-full px-3 py-1.5 bg-transparent text-xs font-bold outline-none text-slate-700 [mask-image:linear-gradient(to_right,black_85%,transparent_100%)] focus:[mask-image:none]" 
-                                                             />
+                                                       <div key={idx} className="flex items-start flex-col gap-1 mt-1">
+                                                          <div className="flex items-center gap-2 w-full">
+                                                             <span className="text-rose-400 text-[10px] font-bold shrink-0 w-3 text-right">{idx + 1}.</span>
+                                                             <div className={`flex-1 relative flex rounded-lg border border-rose-100 bg-rose-50/50 shadow-inner transition-all focus-within:border-rose-300 focus-within:bg-white ${isProjectClosed ? 'opacity-70' : ''}`}>
+                                                                <input 
+                                                                   type="text" 
+                                                                   defaultValue={issue} 
+                                                                   onBlur={(e) => updateTestCaseIssue(obj.id, tc.id, idx, e.target.value)}
+                                                                   disabled={isProjectClosed}
+                                                                   placeholder="이슈 내용을 입력하세요" 
+                                                                   className="w-full px-3 py-1.5 bg-transparent text-xs font-bold outline-none text-slate-700 [mask-image:linear-gradient(to_right,black_85%,transparent_100%)] focus:[mask-image:none]" 
+                                                                />
+                                                             </div>
+                                                             <button onClick={() => handleCopySingleIssue(issue)} className="p-1.5 bg-white border border-slate-200 text-slate-400 hover:text-blue-500 rounded-lg hover:bg-blue-50 transition-colors shadow-sm shrink-0" title="이슈 복사"><Copy className="w-3.5 h-3.5" /></button>
+                                                             {!isProjectClosed && (
+                                                                <button onClick={() => removeTestCaseIssue(obj.id, tc.id, idx)} className="p-1.5 text-rose-300 hover:text-rose-600 hover:bg-rose-100 rounded-lg transition-all shrink-0" title="이슈 삭제"><Trash2 className="w-3.5 h-3.5" /></button>
+                                                             )}
                                                           </div>
-                                                          <button onClick={() => handleCopySingleIssue(issue)} className="p-1.5 bg-white border border-slate-200 text-slate-400 hover:text-blue-500 rounded-lg hover:bg-blue-50 transition-colors shadow-sm shrink-0" title="이슈 복사"><Copy className="w-3.5 h-3.5" /></button>
-                                                          {!isProjectClosed && (
-                                                             <button onClick={() => removeTestCaseIssue(obj.id, tc.id, idx)} className="p-1.5 text-rose-300 hover:text-rose-600 hover:bg-rose-100 rounded-lg transition-all shrink-0" title="이슈 삭제"><Trash2 className="w-3.5 h-3.5" /></button>
-                                                          )}
+                                                          <div className="flex gap-1.5 ml-7">
+                                                             {/* JIRA BUTTON OR INPUT OR LINK */}
+                                                             {currentProjectData?.jiraIntegration && currentProjectData?.jiraEpicUrl && !isProjectClosed && (
+                                                                tc.jiraKeys && tc.jiraKeys[idx] ? (
+                                                                   <button onClick={() => {
+                                                                      let domain = '';
+                                                                      try { domain = new URL(currentProjectData.jiraEpicUrl).origin; } catch(e) {}
+                                                                      if (domain) window.open(`${domain}/browse/${tc.jiraKeys[idx]}`, '_blank');
+                                                                   }} className="px-2 py-1.5 bg-[#0052CC]/10 text-[#0052CC] border border-[#0052CC]/20 rounded-lg text-[10px] font-black uppercase hover:bg-[#0052CC]/20 transition-colors shadow-sm flex items-center gap-1.5 shrink-0" title="Jira 이동">
+                                                                      {tc.jiraKeys[idx]} <ExternalLink className="w-3 h-3" />
+                                                                   </button>
+                                                                ) : jiraLinkingTarget === `${obj.id}_${tc.id}_${idx}` ? (
+                                                                   <input 
+                                                                      type="text" 
+                                                                      autoFocus
+                                                                      placeholder="Jira 이슈 키 (예: BUG-123)" 
+                                                                      className="w-40 px-2 py-1.5 bg-white border border-blue-300 text-slate-700 rounded-lg text-[10px] font-bold outline-none focus:ring-2 focus:ring-blue-500/20 shadow-inner transition-all shrink-0"
+                                                                      onBlur={(e) => saveJiraKey(obj.id, tc.id, idx, e.target.value)}
+                                                                      onKeyPress={(e) => { if (e.key === 'Enter') { saveJiraKey(obj.id, tc.id, idx, e.target.value); e.target.blur(); } }}
+                                                                   />
+                                                                ) : (
+                                                                   <button onClick={() => {
+                                                                      setJiraCreateModal({ objId: obj.id, tcId: tc.id, issueIndex: idx, summary: issue || '', description: '' });
+                                                                   }} className="px-2 py-1.5 bg-white border border-slate-200 text-[#0052CC] rounded-lg text-[10px] font-black uppercase hover:bg-slate-50 transition-colors shadow-sm flex items-center gap-1.5 shrink-0">
+                                                                      <Layout className="w-3 h-3" /> 지라 등록
+                                                                   </button>
+                                                                )
+                                                             )}
+                                                          </div>
                                                        </div>
                                                     ))}
                                                  </div>
